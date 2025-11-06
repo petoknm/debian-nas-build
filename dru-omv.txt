@@ -197,7 +197,7 @@ for f in `grep 'NoNewPrivileges=yes' /lib/systemd/system/*.service | cut -d ':' 
   e=/etc/systemd/system/${b}.d
   if [ "X${l}" = "X" -a ! -e ${e}/privileges.conf ]; then
     echo $e
-    mkdir $e
+    [ -e $e ] || mkdir $e
     echo "[Service]" > ${e}/privileges.conf
     echo "NoNewPrivileges=no" >> ${e}/privileges.conf
   fi

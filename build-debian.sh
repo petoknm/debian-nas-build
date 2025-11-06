@@ -1378,6 +1378,8 @@ done
 
 cd -
 
+rm -f ${ltspBase}${cpuArch}/boot/uInitrd*
+
 cd ${ltspBase}${cpuArch}/
 
 [ -e ${ltspBase}fw/newroot.tar.gz ] && tar --keep-directory-symlink -xzvf ${ltspBase}fw/newroot.tar.gz

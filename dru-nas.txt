@@ -10,8 +10,8 @@ fi
 
 [ "x$installRecommends" = "x0" ] && aptRecommends=--no-install-recommends
 
-sed -i s/'UID_MIN.*1000'/'UID_MIN			  502'/g /etc/login.defs
-sed -i s/'GID_MIN.*1000'/'GID_MIN			  500'/g /etc/login.defs
+sed -i s/'^UID_MIN.*1000$'/'UID_MIN			  492'/g /etc/login.defs
+sed -i s/'^GID_MIN.*1000$'/'GID_MIN			  490'/g /etc/login.defs
 
 
 echo " *** upgrade packages ..."
@@ -294,6 +294,9 @@ rm -f /var/swap
 
 apt-get install -y fake-hwclock i2c-tools mtd-utils uuid-runtime
 apt-get install -y watchdog
+
+sed -i s/'UID_MIN.*492$'/'UID_MIN			  502'/g /etc/login.defs
+sed -i s/'GID_MIN.*490$'/'GID_MIN			  500'/g /etc/login.defs
 
 [ ! -e /bin/nice      ] && ln -s `which nice` /bin/nice
 [ ! -e /sbin/watchdog ] && ln -s `which busybox` /sbin/watchdog
