@@ -2,6 +2,9 @@
 aptRecommends=--no-install-recommends
 #aptRecommends=
 
+distURL=http://ftp.us.debian.org/debian
+backURL=$distURL
+
 if [ -e /etc/debian-build.conf ]; then
   . /etc/debian-build.conf
 fi
@@ -227,6 +230,10 @@ tar xzvf /root/source/openmediavault-init-scripts.tar.gz
 cd -
 
 DEBIAN_FRONTEND=noninteractive apt-get install -y openmediavault openmediavault-lvm2 || DEBIAN_FRONTEND=noninteractive apt-get install -y openmediavault
+
+if [ -e /etc/apt/sources.list.d/openmediavault-kernel-backports.list ]; then
+  sed -i 's|http://httpredir.debian.org/debian|'$backURL'|g' /etc/apt/sources.list.d/openmediavault-kernel-backports.list
+fi
 
 omvedeb=openmediavault-omvextrasorg_latest_all${versOmv}.deb
 if [ $versOmv -lt 3 ]; then

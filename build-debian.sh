@@ -18,6 +18,7 @@ distBrand=Debian
 #distName=bullseye
 distName=bookworm
 distURL=http://ftp.us.debian.org/debian
+oldrURL=http://archive.debian.org/debian
 secuURL=http://security.debian.org
 imageName=debian-nas
 mainRepo="main"
@@ -52,6 +53,7 @@ if [ $cpuArch = amd64 -o $cpuArch = i386 ]; then
   boardName=pc
 fi
 
+backURL=$distURL
 distDeb=stretch
 distKeyringFile=release-9.asc
 distOmv=arrakis
@@ -62,6 +64,7 @@ if [ ${distName} = bookworm ] ; then
   distOmv=sandworm
   versOmv=7
 elif [ ${distName} = bullseye ] ; then
+  backURL=$oldrURL
   distDeb=bullseye
   distKeyringFile=release-11.asc
   distOmv=shaitan
@@ -821,6 +824,9 @@ cp ${ltspBase}dru-usr.txt ${ltspBase}${cpuArch}/root/bin/dru-usr.sh
 chmod ugo+rx ${ltspBase}${cpuArch}/root/bin/dru-usr.sh
 #cp ${ltspBase}dru-post.txt ${ltspBase}${cpuArch}/root/bin/dru-post.sh
 #chmod ugo+rx ${ltspBase}${cpuArch}/root/bin/dru-post.sh
+
+sed -i 's|^distURL=.*|distURL='$distURL'|g' ${ltspBase}${cpuArch}/root/bin/dru-omv.sh
+sed -i 's|^backURL=.*|backURL='$backURL'|g' ${ltspBase}${cpuArch}/root/bin/dru-omv.sh
 
 mkdir -p ${ltspBase}${cpuArch}/root/source
 cp -p ${ltspBase}archives/openmediavault-init-scripts.tar.gz ${ltspBase}${cpuArch}/root/source/
