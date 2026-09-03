@@ -243,6 +243,9 @@ if [ $versDeb -lt 12 ]; then
   apt-get ${aptRecommends} install -y fuse resolvconf
 else
   apt-get ${aptRecommends} install -y fuse3 systemd-resolved
+  rm -f /etc/resolv.conf
+  echo "nameserver 1.1.1.1" > /etc/resolv.conf
+  echo "nameserver 8.8.8.8" >> /etc/resolv.conf
 fi
 
 apt-get ${aptRecommends} install -y iproute || apt-get ${aptRecommends} install -y iproute2

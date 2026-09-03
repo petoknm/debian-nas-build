@@ -100,6 +100,13 @@ function admin_password() {
   #chroot ${ltspBase}${cpuArch} smbpasswd -a admin
 }
 
+function fix_chroot_dns() {
+    mkdir -p ${ltspBase}${cpuArch}/etc
+    rm -f ${ltspBase}${cpuArch}/etc/resolv.conf
+    echo "nameserver 1.1.1.1" > ${ltspBase}${cpuArch}/etc/resolv.conf
+    echo "nameserver 8.8.8.8" >> ${ltspBase}${cpuArch}/etc/resolv.conf
+}
+
 function user_password() {
   firstUser=`cat ${ltspBase}${cpuArch}/etc/passwd |grep '504:500' | cut -d ':' -f 1`
   if [ "x$firstUser" != "x" ]; then
@@ -452,25 +459,27 @@ EOFDRUBCF
 
 # ---- main ----
 
-if [ x$1 = xadminpassword ]; then
+if [ "x${1:-}" = "xadminpassword" ]; then
   admin_password
   exit 0
-elif [ x$1 = xuserpassword ]; then
+elif [ "x${1:-}" = "xuserpassword" ]; then
   user_password
   exit 0
-elif [ x$1 = xdiskimage ]; then
+elif [ "x${1:-}" = "xdiskimage" ]; then
   make_disk_image ext4 3 $imageName
   exit 0
 fi
 
 
 echo " *** install packages on build host ..."
-apt-get install -y debootstrap gdisk qemu-user-static binfmt-support whiptail dosfstools rsync patch
-apt-get install -y python-minimal || apt-get install -y python2-minimal || apt-get install -y python3-minimal
+apt-get install -y debootstrap gdisk qemu-user-static binfmt-support whiptail dosfstools rsync patch wget gnupg ca-certificates python3-minimal fdisk e2fsprogs binutils parted
 
 [ -e ${ltspBase}etc/${distBrandLower}-build.conf ] && . ${ltspBase}etc/${distBrandLower}-build.conf
 [ -e ${ltspBase}${cpuArch}/etc/${distBrandLower}-build.conf ] && . ${ltspBase}${cpuArch}/etc/${distBrandLower}-build.conf
 
+if [ "${1:-}" = "batch" -o "${BATCH:-0}" = "1" ]; then
+    echo " *** running in non-interactive batch mode using configuration ..."
+else
 BMODEL=$(whiptail --default-item ${boardModel} --title "Image Creator Firmware Extraction" --cancel-button "Quit" --ok-button "Select" --menu "Which firmware would you like to download to get hardware tools?" 18 72 10 \
     "nsa310s" "Zyxel NSA310S" \
     "nsa320s" "Zyxel NSA320S" \
@@ -619,6 +628,7 @@ if ${imageOmv} = true ]; then
 else
   askClientOpt
 fi
+fi
 
 
 
@@ -686,22 +696,46 @@ touch ${ltspBase}${cpuArch}/tmp/repositories.done
 
 echo " *** language settings ..."
 
-defaultLocale=`echo ${LANG} | sed s/'utf8'/'UTF-8'/g`
-defaultLocaleRegion=`echo ${defaultLocale} | cut -d "." -f 1`
-defaultLocaleShort=`echo ${defaultLocale} | cut -d "_" -f 1`
-defaultLocaleCharMap=`echo ${defaultLocale} | cut -d "." -f 2`
-kbLayoutcode=`cat /etc/default/keyboard | grep XKBLAYOUT | cut -d "=" -f 2 | cut -d '"' -f 2`
+defaultLocale=${LANG:-en_US.UTF-8}
+defaultLocale=$(echo "${defaultLocale}" | sed s/'utf8'/'UTF-8'/g)
+[ -z "$defaultLocale" ] && defaultLocale="en_US.UTF-8"
+defaultLocaleRegion=$(echo "${defaultLocale}" | cut -d "." -f 1)
+defaultLocaleShort=$(echo "${defaultLocale}" | cut -d "_" -f 1)
+defaultLocaleCharMap=$(echo "${defaultLocale}" | cut -d "." -f 2)
+[ "$defaultLocaleCharMap" = "$defaultLocale" ] && defaultLocaleCharMap="UTF-8"
 
-tzArea=`cat /etc/timezone | cut -d "/" -f 1`
-tzZone=`cat /etc/timezone | cut -d "/" -f 2`
+kbLayoutcode="dk"
+kbModelcode="pc105"
+kbVariantcode=""
+kbOptionscode=""
 
-kbLayoutcode=`cat /etc/default/keyboard | grep XKBLAYOUT | cut -d "=" -f 2 | cut -d '"' -f 2`
-kbModelcode=`cat /etc/default/keyboard | grep XKBMODEL | cut -d "=" -f 2 | cut -d '"' -f 2`
-kbVariantcode=`cat /etc/default/keyboard | grep XKBVARIANT | cut -d "=" -f 2 | cut -d '"' -f 2`
-kbOptionscode=`cat /etc/default/keyboard | grep XKBOPTIONS | cut -d "=" -f 2 | cut -d '"' -f 2`
+if [ -f /etc/default/keyboard ]; then
+  kbLayoutcode=$(grep XKBLAYOUT /etc/default/keyboard | cut -d "=" -f 2 | cut -d '"' -f 2 || true)
+  [ -z "$kbLayoutcode" ] && kbLayoutcode="dk"
+  kbModelcode=$(grep XKBMODEL /etc/default/keyboard | cut -d "=" -f 2 | cut -d '"' -f 2 || true)
+  [ -z "$kbModelcode" ] && kbModelcode="pc105"
+  kbVariantcode=$(grep XKBVARIANT /etc/default/keyboard | cut -d "=" -f 2 | cut -d '"' -f 2 || true)
+  kbOptionscode=$(grep XKBOPTIONS /etc/default/keyboard | cut -d "=" -f 2 | cut -d '"' -f 2 || true)
+fi
+
+tzArea="Europe"
+tzZone="Copenhagen"
+
+if [ -f /etc/timezone ]; then
+  tzArea=$(cut -d "/" -f 1 /etc/timezone 2>/dev/null || echo "Europe")
+  tzZone=$(cut -d "/" -f 2 /etc/timezone 2>/dev/null || echo "Copenhagen")
+elif [ -L /etc/localtime ]; then
+  tzTarget=$(readlink /etc/localtime 2>/dev/null || true)
+  if [ -n "$tzTarget" ]; then
+    tzArea=$(echo "$tzTarget" | awk -F/ '{print $(NF-1)}')
+    tzZone=$(echo "$tzTarget" | awk -F/ '{print $NF}')
+  fi
+fi
+[ -z "$tzArea" ] && tzArea="Europe"
+[ -z "$tzZone" ] && tzZone="Copenhagen"
 
 kbXkbkeymap="${kbLayoutcode}"
-if [ -n $kbVariantcode ]; then
+if [ -n "${kbVariantcode}" ]; then
   kbXkbkeymap="${kbLayoutcode}(${kbVariantcode})"
 fi
 
@@ -831,9 +865,11 @@ sed -i 's|^backURL=.*|backURL='$backURL'|g' ${ltspBase}${cpuArch}/root/bin/dru-o
 mkdir -p ${ltspBase}${cpuArch}/root/source
 cp -p ${ltspBase}archives/openmediavault-init-scripts.tar.gz ${ltspBase}${cpuArch}/root/source/
 
+fix_chroot_dns
 chroot ${ltspBase}${cpuArch} bash -e /root/bin/dru-nas.sh
 
 if [ ${imageOmv} = true ]; then
+	fix_chroot_dns
 	chroot ${ltspBase}${cpuArch} bash -e /root/bin/dru-omv.sh
 fi
 
