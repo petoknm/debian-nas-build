@@ -118,6 +118,138 @@ function user_password() {
   fi
 }
 
+function ensure_boot_populated() {
+    local R="${ltspBase}${cpuArch}"
+    local BOOTDIR="${R}/boot"
+
+    # If boot dir already has usb_key_func.sh, nothing to do
+    if [ -e "${BOOTDIR}/usb_key_func.sh" ]; then
+        echo "Boot directory already populated."
+        return 0
+    fi
+
+    echo "*** Populating ${BOOTDIR} from available sources ..."
+    mkdir -p "${BOOTDIR}"
+
+    # 1) Extract BSP boot files (usb_key_func.sh, debroot.sh, check_file, md5sums)
+    #    from the deb inside the BSP boot zip
+    #    Note: use ar+tar instead of dpkg-deb since dpkg-deb may not be available on the host
+    local BSP_DEB="${R}/root/board-debs/nas5xx-boot-5.21/linux-bsp-nas5xx-boot_5.21_armhf.deb"
+    if [ -e "${BSP_DEB}" ]; then
+        echo "Extracting boot files from BSP deb: ${BSP_DEB}"
+        local TMPEXTRACT=$(mktemp -d)
+        cd "${TMPEXTRACT}"
+        ar x "${BSP_DEB}"
+        # data.tar.* contains the actual files
+        for dt in data.tar.gz data.tar.xz data.tar.zst data.tar.bz2 data.tar ; do
+            if [ -e "$dt" ]; then
+                tar xf "$dt"
+                break
+            fi
+        done
+        cd - > /dev/null
+        if [ -d "${TMPEXTRACT}/boot" ]; then
+            cp -a "${TMPEXTRACT}/boot/"* "${BOOTDIR}/"
+            echo "Extracted BSP boot files: $(ls ${BOOTDIR}/usb_key_func.sh 2>/dev/null && echo OK || echo MISSING)"
+        else
+            echo "WARNING: no boot/ directory found in BSP deb"
+        fi
+        rm -rf "${TMPEXTRACT}"
+    else
+        # Fallback: try extracting from the zip in archives/
+        for f in ${ltspBase}archives/*-boot*.zip ; do
+            if [ -e "$f" ]; then
+                echo "Extracting boot files from archive: $f"
+                local TMPEXTRACT=$(mktemp -d)
+                unzip -o "$f" -d "${TMPEXTRACT}"
+                # Find and extract the boot deb using ar+tar
+                for deb in ${TMPEXTRACT}/*-boot*.deb ; do
+                    if [ -e "$deb" ]; then
+                        mkdir -p "${TMPEXTRACT}/extracted"
+                        cd "${TMPEXTRACT}/extracted"
+                        ar x "$deb"
+                        for dt in data.tar.gz data.tar.xz data.tar.zst data.tar.bz2 data.tar ; do
+                            if [ -e "$dt" ]; then
+                                tar xf "$dt"
+                                break
+                            fi
+                        done
+                        cd - > /dev/null
+                        if [ -d "${TMPEXTRACT}/extracted/boot" ]; then
+                            cp -a "${TMPEXTRACT}/extracted/boot/"* "${BOOTDIR}/"
+                        fi
+                    fi
+                done
+                rm -rf "${TMPEXTRACT}"
+            fi
+        done
+    fi
+
+    # 2) Extract boot archives (tar.gz) from archives/
+    for f in ${ltspBase}archives/*-boot*.tar.gz ; do
+        if [ -e "$f" ]; then
+            echo "Extracting boot archive: $f"
+            tar xzf "$f" -C "${BOOTDIR}"
+        fi
+    done
+
+    # 3) Get uImage from kernel/ or fw/
+    if [ ! -e "${BOOTDIR}/uImage" ]; then
+        if [ -e "${ltspBase}kernel/uImage" ]; then
+            echo "Copying uImage from kernel/"
+            cp -p "${ltspBase}kernel/uImage" "${BOOTDIR}/"
+            chown root:root "${BOOTDIR}/uImage"
+        elif [ -e "${ltspBase}fw/uImage" ]; then
+            echo "Copying uImage from fw/"
+            cp -p "${ltspBase}fw/uImage" "${BOOTDIR}/"
+            chown root:root "${BOOTDIR}/uImage"
+        fi
+    fi
+
+    # 4) Extract BSP init files (debinit.sh, zy-fanctrl.service, etc.) from init deb
+    #    debinit.sh is the critical boot chain script called by debroot.sh
+    if [ ! -e "${R}/debinit.sh" ]; then
+        local BSP_INIT_DEB="${R}/root/board-debs/nas5xx-boot-5.21/linux-bsp-nas5xx-init_5.21_armhf.deb"
+        if [ -e "${BSP_INIT_DEB}" ]; then
+            echo "Extracting init files from BSP init deb: ${BSP_INIT_DEB}"
+            local TMPEXTRACT=$(mktemp -d)
+            cd "${TMPEXTRACT}"
+            ar x "${BSP_INIT_DEB}"
+            for dt in data.tar.gz data.tar.xz data.tar.zst data.tar.bz2 data.tar ; do
+                if [ -e "$dt" ]; then
+                    tar xf "$dt"
+                    break
+                fi
+            done
+            cd - > /dev/null
+            # Copy extracted files into the rootfs
+            if [ -e "${TMPEXTRACT}/debinit.sh" ]; then
+                cp -a "${TMPEXTRACT}/debinit.sh" "${R}/"
+                echo "Installed debinit.sh into rootfs"
+            fi
+            # Copy etc, lib, usr directories (systemd services, preinit, utilities)
+            for d in etc lib usr ; do
+                if [ -d "${TMPEXTRACT}/${d}" ]; then
+                    cp -a "${TMPEXTRACT}/${d}/." "${R}/${d}/"
+                fi
+            done
+            rm -rf "${TMPEXTRACT}"
+        else
+            echo "WARNING: BSP init deb not found — debinit.sh will be missing!"
+        fi
+    fi
+
+    # 5) Remove any uInitrd files (consistent with full build)
+    rm -f "${BOOTDIR}"/uInitrd*
+
+    # Verify
+    echo "Boot directory contents:"
+    ls -la "${BOOTDIR}/"
+    if [ ! -e "${BOOTDIR}/usb_key_func.sh" ]; then
+        echo "WARNING: usb_key_func.sh is still missing from boot directory!"
+    fi
+}
+
 # based on make_raspi2_image from https://bitbucket.org/ubuntu-mate/ubuntu-mate-rpi2/src and
 # https://github.com/sneak/kvm-ubuntu-imagebuilder/blob/master/buildimage.sh#L211
 function make_disk_image() {
@@ -133,6 +265,8 @@ function make_disk_image() {
     IMAGE="${3}-${RELEASE}-${DATE}-${cpuArch}.img"
 
     echo "Preparing images/${IMAGE} ......"
+
+    ensure_boot_populated
 
     local FS="${1}"
     local GB=${2}
@@ -204,6 +338,17 @@ EOM
         # ... create third partition:
         parted -s "${BASEDIR}/${IMAGE}" "mkpart ext4 ${START_B}B -0"
     fi
+
+    # Detach any stale loop devices using this image file
+    for dev in $(losetup -j "${BASEDIR}/${IMAGE}" 2>/dev/null | cut -d: -f1); do
+        losetup -d "$dev" 2>/dev/null || true
+    done
+
+    # Ensure loop device nodes /dev/loop0 .. /dev/loop15 exist in container environment
+    for i in $(seq 0 15); do
+        [ -e /dev/loop$i ] || mknod /dev/loop$i b 7 $i 2>/dev/null || true
+    done
+    [ -e /dev/loop-control ] || mknod /dev/loop-control c 10 237 2>/dev/null || true
 
     BOOT_LOOP=/dev/null
     ROOT_LOOP=/dev/null
@@ -283,10 +428,13 @@ EOM
         umount "${MOUNTDIR}/boot"
         losetup -d "${BOOT_LOOP}"
 
-        if cp -p $R/boot/vmlinuz-* "${MOUNTDIR}/boot/" ; then
-          cp -p $R/boot/config-*     "${MOUNTDIR}/boot/"
-          cp -p $R/boot/initrd.img-* "${MOUNTDIR}/boot/"        
-          cp -p $R/boot/System.map-* "${MOUNTDIR}/boot/"
+        # Sync boot files into FAT partition mounted at ${MOUNTDIR}/boot
+        # FAT does not support symlinks, so dereference them with -L, and do not preserve owner/group/perms
+        echo "Copying boot files to TC_BOOT ......"
+        if [ -d "$R/boot/" ] && [ "$(ls -A $R/boot/)" ]; then
+            rsync -rtLv --modify-window=1 "$R/boot/" "${MOUNTDIR}/boot/" || cp -rL "$R/boot/"* "${MOUNTDIR}/boot/" || true
+        else
+            echo "WARNING: $R/boot/ is empty or missing — TC_BOOT partition will be empty!"
         fi
     fi
 
@@ -466,6 +614,9 @@ elif [ "x${1:-}" = "xuserpassword" ]; then
   user_password
   exit 0
 elif [ "x${1:-}" = "xdiskimage" ]; then
+  # Load config so board/distro settings are available for standalone diskimage runs
+  [ -e ${ltspBase}etc/${distBrandLower}-build.conf ] && . ${ltspBase}etc/${distBrandLower}-build.conf
+  [ -e ${ltspBase}${cpuArch}/etc/${distBrandLower}-build.conf ] && . ${ltspBase}${cpuArch}/etc/${distBrandLower}-build.conf
   make_disk_image ext4 3 $imageName
   exit 0
 fi
