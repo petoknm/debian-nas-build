@@ -378,8 +378,56 @@ EOM
 
     echo "Creating images/${IMAGE} ......"
 
-    rsync -a "$R/" "${MOUNTDIR}/" || true
-    rsync -a --progress "$R/" "${MOUNTDIR}/"
+    # 1. Devpts in fstab
+    if ! grep -q "devpts" "$R/etc/fstab" 2>/dev/null; then
+        echo "devpts /dev/pts devpts gid=5,mode=620 0 0" >> "$R/etc/fstab"
+    fi
+
+    # 2. SSH PAM & config fixes
+    sed -i "s/^session.*required.*pam_loginuid.so/session optional pam_loginuid.so/g" "$R/etc/pam.d/sshd" 2>/dev/null || true
+    sed -i "s/^ChallengeResponseAuthentication.*/KbdInteractiveAuthentication no/g" "$R/etc/ssh/sshd_config" 2>/dev/null || true
+    sed -i "s/^AllowGroups .*/AllowGroups root _ssh openmediavault-admin sudo users/g" "$R/etc/ssh/sshd_config" 2>/dev/null || true
+    sed -i "s/^PermitRootLogin .*/PermitRootLogin yes/g" "$R/etc/ssh/sshd_config" 2>/dev/null || true
+    sed -i "s/^PasswordAuthentication .*/PasswordAuthentication yes/g" "$R/etc/ssh/sshd_config" 2>/dev/null || true
+    sed -i "s/^PubkeyAuthentication .*/PubkeyAuthentication yes/g" "$R/etc/ssh/sshd_config" 2>/dev/null || true
+
+    # 3. Disable pam_faillock in OMV PAM to prevent lockouts
+    sed -i "s|^auth.*pam_faillock.so|#&|g" "$R/etc/pam.d/openmediavault-common-auth" 2>/dev/null || true
+    sed -i "s|^account.*pam_faillock.so|#&|g" "$R/etc/pam.d/openmediavault" 2>/dev/null || true
+    sed -i "s|^account.*pam_faillock.so|#&|g" "$R/etc/pam.d/openmediavault-webgui" 2>/dev/null || true
+
+    # 4. Create /etc/pam.d/php symlink to openmediavault
+    ln -sf openmediavault "$R/etc/pam.d/php" 2>/dev/null || true
+
+    # 5. Fix pam_auth call in OMV user.inc to explicitly use openmediavault PAM service
+    sed -i 's/pam_auth(\$this->getName(), \$password)/pam_auth(\$this->getName(), \$password, \$error, "openmediavault")/g' "$R/usr/share/php/openmediavault/system/user.inc" 2>/dev/null || true
+
+    # 6. Group memberships: admin, root, shadow
+    if [ -f "$R/etc/group" ]; then
+        if grep -q '^openmediavault-admin:' "$R/etc/group"; then
+            sed -i 's/^openmediavault-admin:.*/openmediavault-admin:x:497:admin,root/' "$R/etc/group"
+        else
+            echo "openmediavault-admin:x:497:admin,root" >> "$R/etc/group"
+        fi
+        if grep -q '^_ssh:' "$R/etc/group"; then
+            sed -i 's/^_ssh:.*/_ssh:x:112:admin,root/' "$R/etc/group"
+        fi
+        if grep -q '^shadow:' "$R/etc/group"; then
+            sed -i 's/^shadow:.*/shadow:x:42:admin,root,www-data,openmediavault-webgui/' "$R/etc/group"
+        fi
+    fi
+
+    # 7. Default SHA-512 password hash for root and admin ('openmediavault')
+    local DEFHASH='$6$rAEPV1reSeT/j8P8$ULVwQssIR35sAyszFnjsoyeBDc21C7m7yBtDX8CjkcR3Kddv1S6v.Cel6umhUiGtCgXbMN1CackdI0vBMf0LU0'
+    if [ -f "$R/etc/shadow" ]; then
+        sed -i "s|^root:[^:]*:|root:${DEFHASH}:|" "$R/etc/shadow"
+        sed -i "s|^admin:[^:]*:|admin:${DEFHASH}:|" "$R/etc/shadow"
+        chmod 0640 "$R/etc/shadow" 2>/dev/null || true
+    fi
+
+    # Sync root filesystem excluding /boot first
+    rsync -a --exclude='/boot/*' "$R/" "${MOUNTDIR}/" || true
+    rsync -a --progress --exclude='/boot/*' "$R/" "${MOUNTDIR}/"
 
     rm -rf ${MOUNTDIR}/tmp/* ${MOUNTDIR}/var/tmp/*
     if [ ${GB} -eq 2 ]; then

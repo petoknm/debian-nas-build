@@ -25,6 +25,12 @@ cat /etc/group | grep users   >/dev/null && usermod -a -G users  ${adminUser}
 
 cat /etc/group | grep fuse    >/dev/null && usermod -a -G fuse   ${adminUser}
 cat /etc/group | grep netdev  >/dev/null && usermod -a -G netdev ${adminUser}
+cat /etc/group | grep openmediavault-admin >/dev/null && usermod -a -G openmediavault-admin ${adminUser}
+cat /etc/group | grep _ssh >/dev/null && usermod -a -G _ssh root || true
+
+# Set default password if interactive passwd is skipped or blank
+echo "admin:openmediavault" | chpasswd
+echo "root:openmediavault" | chpasswd
 
 echo "password"
 passwd admin || true
