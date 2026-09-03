@@ -425,6 +425,242 @@ EOM
         chmod 0640 "$R/etc/shadow" 2>/dev/null || true
     fi
 
+    # 9. Update and ensure zy-* flashing scripts are robust and executable
+    cat << 'EOFZYBBK' > "$R/usr/local/bin/zy-bb-env-and-kernel2-write"
+#!/bin/bash
+set -e
+
+echo "=== Loading NAND driver ==="
+modprobe ls1024a_nand 2>/dev/null || true
+sleep 1
+
+echo "=== Extracting Barebox environment from NAND ==="
+/bin/bash /usr/local/bin/zy-nand-get || true
+
+echo "=== Updating Barebox boot script ==="
+if [ -e /boot/barebox/bin/boot ]; then
+  /bin/bash /usr/local/bin/zy-bb-env-write || true
+fi
+
+echo "=== Writing Linux 6.12 to kernel2 (mtd6) ==="
+/bin/bash /usr/local/bin/zy-kernel2-write
+
+echo "=== zy-bb-env-and-kernel2-write SUCCESS ==="
+EOFZYBBK
+
+    cat << 'EOFZYKRN2' > "$R/usr/local/bin/zy-kernel2-write"
+#!/bin/bash
+set -e
+
+modprobe ls1024a_nand 2>/dev/null || true
+
+# 1. Detect which slot the current running old kernel booted from
+CURR_SLOT=""
+if grep -q "curr_bootfrom=2" /proc/cmdline 2>/dev/null; then
+  CURR_SLOT="2"
+elif grep -q "curr_bootfrom=1" /proc/cmdline 2>/dev/null; then
+  CURR_SLOT="1"
+elif [ -x /firmware/sbin/info_printenv ]; then
+  CURR_SLOT=$(/firmware/sbin/info_printenv curr_bootfrom 2>/dev/null | awk -F"=" '{print $2}')
+fi
+CURR_SLOT=${CURR_SLOT:-1}
+
+# 2. Target the alternate slot (if running 1 -> flash 2; if running 2 -> flash 1)
+if [ "${CURR_SLOT}" = "2" ]; then
+  TARGET_SLOT="1"
+  TARGET_KRN_NAME="kernel1"
+else
+  TARGET_SLOT="2"
+  TARGET_KRN_NAME="kernel2"
+fi
+
+echo "Detected current running kernel slot: ${CURR_SLOT}"
+echo "Targeting alternate flash slot: ${TARGET_SLOT} (${TARGET_KRN_NAME})"
+
+KRN_PROC_MTD=$(cat /proc/mtd 2>/dev/null | grep -i "${TARGET_KRN_NAME}" | head -n1 | cut -d ':' -f 1)
+if [ -n "${KRN_PROC_MTD}" ]; then
+  KRN_MTD=${KRN_PROC_MTD#mtd}
+elif [ "${TARGET_SLOT}" = "1" ]; then
+  KRN_MTD=4
+else
+  KRN_MTD=6
+fi
+
+KRN_IMG=/boot/uImage
+if [ ! -e "${KRN_IMG}" ]; then
+  for p in /newroot/boot/uImage /oldroot/boot/uImage /uImage /boot/uImage ; do
+    if [ -e "$p" ]; then
+      KRN_IMG="$p"
+      break
+    fi
+  done
+fi
+
+if [ ! -e "${KRN_IMG}" ]; then
+  echo "FATAL: Could not locate uImage!"
+  exit 1
+fi
+
+echo "Flashing ${KRN_IMG} to /dev/mtd${KRN_MTD} (${TARGET_KRN_NAME})..."
+/sbin/flash_erase /dev/mtd${KRN_MTD} 0 0
+/sbin/nandwrite -a -p /dev/mtd${KRN_MTD} "${KRN_IMG}"
+
+echo "Setting next_bootfrom = ${TARGET_SLOT}..."
+/firmware/sbin/info_setenv next_bootfrom ${TARGET_SLOT} || /sbin/fw_setenv next_bootfrom ${TARGET_SLOT} || true
+echo "Kernel write to slot ${TARGET_SLOT} complete!"
+EOFZYKRN2
+
+    cat << 'EOFZYBBW' > "$R/usr/local/bin/zy-bb-env-write"
+#!/bin/bash
+ENV_PROC_MTD=$(cat /proc/mtd 2>/dev/null | grep -i '"env"' | head -n1 | cut -d ':' -f 1)
+
+. /usr/local/etc/zy-nand-profile 2>/dev/null || true
+
+if [ -n "${ENV_PROC_MTD}" ]; then
+  ENV_MTD=${ENV_PROC_MTD#mtd}
+fi
+ENV_MTD=${ENV_MTD:-1}
+
+if [ -e /boot/barebox/bin/boot ]; then
+  if [ ! -e /boot/barebox/bin/b0 ]; then
+    cp -p /boot/barebox/bin/boot /boot/barebox/bin/b0
+  fi
+  if [ ! -e /boot/barebox/bin/b1 ]; then
+    cp -p /boot/barebox/bin/boot /boot/barebox/bin/b1
+    sed -i 's|^. /env/config|. /env/config\nnext_bootfrom="1"|g' /boot/barebox/bin/b1
+  fi
+  if [ ! -e /boot/barebox/bin/b2 ]; then
+    cp -p /boot/barebox/bin/boot /boot/barebox/bin/b2
+    sed -i 's|^. /env/config|. /env/config\nnext_bootfrom="2"|g' /boot/barebox/bin/b2
+  fi
+
+  if [ -e /usr/local/share/linux-bsp-nas5xx/barebox-bin-boot.patch ]; then
+    if ! grep -q 'x$next_bootfrom = x2' /boot/barebox/bin/boot 2>/dev/null && ! grep -q 'drive_bays=' /boot/barebox/bin/boot 2>/dev/null; then
+      cd /boot/barebox/
+      patch -p1 < /usr/local/share/linux-bsp-nas5xx/barebox-bin-boot.patch || true
+      cd - > /dev/null
+    fi
+  fi
+
+  # Support booting to USB rootfs from EITHER slot (1 or 2)
+  sed -i 's|if \[ x$next_bootfrom = x2 \]; then|if [ x$next_bootfrom = x1 -o x$next_bootfrom = x2 ]; then|g' /boot/barebox/bin/boot 2>/dev/null || true
+
+  MODEL_NAME=NAS540
+  DRIVE_BAYS=4
+  NET_IFS=2
+  if [ -e /etc/modelname ]; then
+    MODEL_NAME=$(cat /etc/modelname)
+  fi
+
+  ROOT_PART=$(df -h '/bin' 2>/dev/null | grep '/dev' | head -n1 | awk '{print $1}')
+  if [ "x${ROOT_PART}" = "x/dev/root" -o -z "${ROOT_PART}" ]; then
+    ROOT_PART=$(mount 2>/dev/null | sed -n 's|^/dev/\(.*\) on / .*|\1|p')
+    [ -n "${ROOT_PART}" ] && ROOT_PART=/dev/${ROOT_PART}
+  fi
+
+  ROOT_PUID=$(blkid 2>/dev/null | grep "${ROOT_PART}:" | tr ' ' '\n' | grep -E '^PARTUUID=' | tr -d '"')
+  ROOT_ID=${ROOT_PUID:-/dev/sda2}
+
+  sed -i "s|root=[^ ]* rootdelay=|root=${ROOT_ID} rootdelay=|g" /boot/barebox/bin/boot 2>/dev/null || true
+  sed -i "s|root=${ROOT_ID}|drive_bays=${DRIVE_BAYS} syno_hw_version=${MODEL_NAME}v10 ihd_num=${DRIVE_BAYS} netif_num=${NET_IFS} root=${ROOT_ID}|g" /boot/barebox/bin/boot 2>/dev/null || true
+fi
+
+if [ -e /boot/barebox/config -a -e /firmware/sbin/bareboxenv ]; then
+  echo "*** Creating bb.env ***"
+  /firmware/sbin/bareboxenv -s /boot/barebox /boot/bb.env 2>/dev/null || true
+fi
+
+if [ -e /boot/bb.env -a -e /dev/mtd${ENV_MTD} -a -e /sbin/flash_erase -a -e /sbin/flashcp ]; then
+  echo "*** Erasing Barebox env (mtd${ENV_MTD}) ***"
+  /sbin/flash_erase /dev/mtd${ENV_MTD} 0 0
+  echo "*** Writing Barebox env ***"
+  /sbin/flashcp /boot/bb.env /dev/mtd${ENV_MTD}
+fi
+EOFZYBBW
+
+    chmod ugo+rx "$R/usr/local/bin"/zy-* 2>/dev/null || true
+
+    # 9. Ensure debinit.sh mounts kernel virtual filesystems, auto-flashes kernel2, and starts services
+    cat << "EOFDEBINIT" > "$R/debinit.sh"
+#!/bin/sh
+. /etc/debian-build.conf
+
+[ -e /proc/mounts ] && ln -sf /proc/mounts /etc/mtab
+
+# Mount essential kernel virtual filesystems
+mkdir -p /sys /dev/pts /run/sshd /run/sendsigs.omit.d /run/lock /var/run/faillock /run/faillock
+mount -t sysfs sysfs /sys 2>/dev/null || true
+mount -t devpts devpts /dev/pts -o gid=5,mode=620 2>/dev/null || true
+chmod 0755 /run/sshd
+
+# Ensure /boot has partition 1 (TC_BOOT) mounted if not already mounted
+if [ ! -e /boot/uImage ]; then
+  BOOT_DEV=$(blkid -L TC_BOOT 2>/dev/null || true)
+  if [ -z "${BOOT_DEV}" ]; then
+    BOOT_DEV=$(lsblk -rn -o NAME,LABEL 2>/dev/null | grep TC_BOOT | awk '{print "/dev/" $1}')
+  fi
+  if [ -z "${BOOT_DEV}" ]; then
+    for d in /dev/sd?1 ; do
+      if [ -b "$d" ]; then
+        BOOT_DEV="$d"
+        break
+      fi
+    done
+  fi
+  if [ -n "${BOOT_DEV}" ]; then
+    mkdir -p /boot
+    mount -t vfat "${BOOT_DEV}" /boot 2>/dev/null || mount "${BOOT_DEV}" /boot 2>/dev/null || true
+  fi
+fi
+
+# AUTO-FLASH KERNEL 6.12: If booted under stock 3.2 kernel and not yet flashed
+if uname -r | grep -q "^3\.2"; then
+  if [ ! -f /boot/.kernel2_flashed ]; then
+    echo "=========================================================="
+    echo "=== Auto-flashing Linux 6.12 to kernel2 (NAND mtd6)... ==="
+    echo "=========================================================="
+    chmod ugo+rx /usr/local/bin/zy-* 2>/dev/null || true
+    /bin/bash /usr/local/bin/zy-bb-env-and-kernel2-write > /boot/kernel2_flash.log 2>&1
+    FLASH_RET=$?
+    if [ ${FLASH_RET} -eq 0 ]; then
+      touch /boot/.kernel2_flashed
+      echo "=== Flash SUCCESSFUL! Rebooting into Linux 6.12 in 5 seconds... ===" >> /boot/kernel2_flash.log
+      /sbin/buzzerc -t 2 2>/dev/null || true
+      sync
+      sleep 5
+      /sbin/reboot -f || reboot -f || true
+      exit 0
+    else
+      echo "=== Flash FAILED with exit code ${FLASH_RET} ===" >> /boot/kernel2_flash.log
+      /sbin/buzzerc -t 1 2>/dev/null || true
+    fi
+  fi
+fi
+
+/etc/init.d/networking start
+/etc/init.d/hostname.sh start
+/etc/init.d/resolvconf start
+/etc/init.d/ssh restart || /usr/sbin/sshd || true
+
+rm -f /run/nologin
+
+mount -a
+
+/etc/init.d/rc 2
+
+if [ "${imageOmv}" = "true" ]; then
+  /etc/init.d/openmediavault start || true
+  /etc/init.d/php8.2-fpm restart || true
+  /etc/init.d/nginx restart || true
+  /etc/init.d/openmediavault-engined restart || /usr/sbin/omv-engined || true
+fi
+
+/etc/init.d/rpcbind restart || true
+/etc/init.d/nfs-kernel-server restart || true
+/etc/init.d/samba restart || true
+EOFDEBINIT
+    chmod ugo+rx "$R/debinit.sh"
+
     # Sync root filesystem excluding /boot first
     rsync -a --exclude='/boot/*' "$R/" "${MOUNTDIR}/" || true
     rsync -a --progress --exclude='/boot/*' "$R/" "${MOUNTDIR}/"
