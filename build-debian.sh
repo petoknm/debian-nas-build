@@ -1,4 +1,6 @@
-#!/bin/sh
+#!/bin/bash
+set -eo pipefail
+BATCH="${BATCH:-0}"
 ltspBase=./
 cd ${ltspBase} ; ltspBase=`pwd`/ ; cd - > /dev/null
 ltspEtc=${ltspBase}etc/
@@ -17,12 +19,12 @@ distBrand=Debian
 #distName=buster
 #distName=bullseye
 distName=bookworm
-distURL=http://ftp.us.debian.org/debian
+distURL=${distURL:-http://deb.debian.org/debian}
 oldrURL=http://archive.debian.org/debian
 secuURL=http://security.debian.org
 imageName=debian-nas
 mainRepo="main"
-moreRepo="main contrib non-free"
+moreRepo="main contrib non-free non-free-firmware"
 notUbuntu=true
 
 imageMdMount=false
@@ -100,13 +102,6 @@ function admin_password() {
   #chroot ${ltspBase}${cpuArch} smbpasswd -a admin
 }
 
-function fix_chroot_dns() {
-    mkdir -p ${ltspBase}${cpuArch}/etc
-    rm -f ${ltspBase}${cpuArch}/etc/resolv.conf
-    echo "nameserver 1.1.1.1" > ${ltspBase}${cpuArch}/etc/resolv.conf
-    echo "nameserver 8.8.8.8" >> ${ltspBase}${cpuArch}/etc/resolv.conf
-}
-
 function user_password() {
   firstUser=`cat ${ltspBase}${cpuArch}/etc/passwd |grep '504:500' | cut -d ':' -f 1`
   if [ "x$firstUser" != "x" ]; then
@@ -118,6 +113,23 @@ function user_password() {
   fi
 }
 
+function fix_chroot_dns() {
+  local target="${ltspBase}${cpuArch}/etc/resolv.conf"
+  if [ -L "${target}" ] || [ ! -s "${target}" ]; then
+    rm -f "${target}"
+    if [ -s /etc/resolv.conf ]; then
+      cp -L /etc/resolv.conf "${target}"
+    else
+      echo "nameserver 1.1.1.1" > "${target}"
+      echo "nameserver 8.8.8.8" >> "${target}"
+    fi
+  fi
+}
+
+# Ensure $R/boot/ is populated with BSP boot files and kernel uImage.
+# During a full build, install-linux.sh (run in chroot) and the BSP boot deb
+# populate armhf/boot/. But when re-running "diskimage" standalone, this
+# directory may be missing. This function reconstructs it from available sources.
 function ensure_boot_populated() {
     local R="${ltspBase}${cpuArch}"
     local BOOTDIR="${R}/boot"
@@ -266,8 +278,6 @@ function make_disk_image() {
 
     echo "Preparing images/${IMAGE} ......"
 
-    ensure_boot_populated
-
     local FS="${1}"
     local GB=${2}
 
@@ -373,11 +383,15 @@ EOM
     mount "${ROOT_LOOP}" "${MOUNTDIR}"
     mkdir -p "${MOUNTDIR}/boot"
     if [ ${cpuArch} != powerpc ] ; then
-        mount "${BOOT_LOOP}" "${MOUNTDIR}/boot"
+        mount -t vfat "${BOOT_LOOP}" "${MOUNTDIR}/boot" || { echo "FATAL: failed to mount BOOT_LOOP (${BOOT_LOOP}) at ${MOUNTDIR}/boot"; umount "${MOUNTDIR}"; losetup -d "${BOOT_LOOP}"; losetup -d "${ROOT_LOOP}"; exit 1; }
     fi
 
     echo "Creating images/${IMAGE} ......"
 
+    # Ensure boot directory is populated (may be missing if running diskimage standalone)
+    ensure_boot_populated
+
+    # Apply essential runtime fixes to rootfs before image sync:
     # 1. Devpts in fstab
     if ! grep -q "devpts" "$R/etc/fstab" 2>/dev/null; then
         echo "devpts /dev/pts devpts gid=5,mode=620 0 0" >> "$R/etc/fstab"
@@ -424,6 +438,19 @@ EOM
         sed -i "s|^admin:[^:]*:|admin:${DEFHASH}:|" "$R/etc/shadow"
         chmod 0640 "$R/etc/shadow" 2>/dev/null || true
     fi
+
+    # 8. Performance tuning for low-power dual-core ARM:
+    # Reduce PHP-FPM max worker processes from 25 to 4
+    if [ -f "$R/etc/php/8.2/fpm/pool.d/openmediavault-webgui.conf" ]; then
+        sed -i 's/^pm.max_children = .*/pm.max_children = 4/' "$R/etc/php/8.2/fpm/pool.d/openmediavault-webgui.conf" 2>/dev/null || true
+    fi
+
+    # Reduce frontend background task polling frequency from 500ms (2 req/s) to 2500ms
+    for f in "$R/var/www/openmediavault"/main.*.js ; do
+        if [ -f "$f" ]; then
+            sed -i 's/defaultTo(Be,500)/defaultTo(Be,2500)/g' "$f" 2>/dev/null || true
+        fi
+    done
 
     # 9. Update and ensure zy-* flashing scripts are robust and executable
     cat << 'EOFZYBBK' > "$R/usr/local/bin/zy-bb-env-and-kernel2-write"
@@ -665,6 +692,15 @@ EOFDEBINIT
     rsync -a --exclude='/boot/*' "$R/" "${MOUNTDIR}/" || true
     rsync -a --progress --exclude='/boot/*' "$R/" "${MOUNTDIR}/"
 
+    # Sync boot files into FAT partition mounted at ${MOUNTDIR}/boot
+    # FAT does not support symlinks, so dereference them with -L, and do not preserve owner/group/perms
+    echo "Copying boot files to TC_BOOT ......"
+    if [ -d "$R/boot/" ] && [ "$(ls -A $R/boot/)" ]; then
+        rsync -rtLv --modify-window=1 "$R/boot/" "${MOUNTDIR}/boot/" || cp -rL "$R/boot/"* "${MOUNTDIR}/boot/" || true
+    else
+        echo "WARNING: $R/boot/ is empty or missing — TC_BOOT partition will be empty!"
+    fi
+
     rm -rf ${MOUNTDIR}/tmp/* ${MOUNTDIR}/var/tmp/*
     if [ ${GB} -eq 2 ]; then
         sed -i s/'^deb-src'/'#deb-src'/g ${MOUNTDIR}/etc/apt/sources.list
@@ -708,18 +744,12 @@ EOFDEBINIT
     sed -i 's|/dev/sda1|LABEL="TC_BOOT"|g' ${MOUNTDIR}/etc/fstab
     sed -i 's|/dev/sda2|LABEL="TC_ROOT"|g' ${MOUNTDIR}/etc/fstab
 
+    # Ensure all files are committed to both partitions before unmounting
+    sync
+
     if [ ${cpuArch} != powerpc ] ; then
         umount "${MOUNTDIR}/boot"
         losetup -d "${BOOT_LOOP}"
-
-        # Sync boot files into FAT partition mounted at ${MOUNTDIR}/boot
-        # FAT does not support symlinks, so dereference them with -L, and do not preserve owner/group/perms
-        echo "Copying boot files to TC_BOOT ......"
-        if [ -d "$R/boot/" ] && [ "$(ls -A $R/boot/)" ]; then
-            rsync -rtLv --modify-window=1 "$R/boot/" "${MOUNTDIR}/boot/" || cp -rL "$R/boot/"* "${MOUNTDIR}/boot/" || true
-        else
-            echo "WARNING: $R/boot/ is empty or missing — TC_BOOT partition will be empty!"
-        fi
     fi
 
     umount "${MOUNTDIR}"
@@ -1070,6 +1100,10 @@ fi
 if [ ! -e ${ltspBase}${cpuArch}/tmp/debootstrap.done ]; then
   echo " *** debootstrap ..."
 
+  # Clean target directory to avoid 'E: Tried to extract package, but file already exists.'
+  rm -rf ${ltspBase}${cpuArch}
+  mkdir -p ${ltspBase}${cpuArch}
+
   mkdir -p ${ltspBase}etc
   distKeyringUrl=https://ftp-master.debian.org/keys/${distKeyringFile}
   #wget -O ${ltspEtc}${distKeyringFile} ${distKeyringUrl}
@@ -1078,29 +1112,24 @@ if [ ! -e ${ltspBase}${cpuArch}/tmp/debootstrap.done ]; then
   #--keyring=${ltspEtc}${distKeyringFile}
   debootstrap --arch ${cpuArch} --foreign --variant=minbase --include=locales --keyring=${ltspEtc}${distKeyringFile}.gpg ${distName} ${ltspBase}${cpuArch} ${distURL}
 
-  cp -p /usr/bin/qemu-arm-static ${ltspBase}${cpuArch}/usr/bin/
+  QEMU_BIN="$(which qemu-arm-static 2>/dev/null || which qemu-arm 2>/dev/null || echo /usr/bin/qemu-arm-static)"
+  cp -p "${QEMU_BIN}" ${ltspBase}${cpuArch}/usr/bin/qemu-arm-static
 
   echo " *** debootstrap second stage ..."
 
   chroot ${ltspBase}${cpuArch} /debootstrap/debootstrap --second-stage || true
 
+  mkdir -p ${ltspBase}${cpuArch}/tmp
   touch ${ltspBase}${cpuArch}/tmp/debootstrap.done
+
+  mkdir -p ${ltspBase}${cpuArch}/etc
+  [ -e ${ltspBase}etc/${distBrandLower}-build.conf ] && cp -p ${ltspBase}etc/${distBrandLower}-build.conf ${ltspBase}${cpuArch}/etc/
 else
   bash ${ltspBase}drushut-${cpuArch}.sh || true
   bash ${ltspBase}drushut-${cpuArch}.sh || true
 fi
 
-if [ -e ${ltspBase}${cpuArch}/etc/resolv.conf ]; then
-  if ! readlink ${ltspBase}${cpuArch}/etc/resolv.conf | grep -q systemd ; then
-    [ ! -e ${ltspBase}${cpuArch}/etc/resolv.conf-resolvconf ] && chroot ${ltspBase}${cpuArch} cp -pP /etc/resolv.conf /etc/resolv.conf-resolvconf
-  fi
-fi
-
-if [ -e ${ltspBase}${cpuArch}/etc/resolv.conf-resolvconf ]; then
-  if ! readlink ${ltspBase}${cpuArch}/etc/resolv.conf | grep -q systemd ; then
-    chroot ${ltspBase}${cpuArch} cp -pP /etc/resolv.conf-resolvconf /etc/resolv.conf
-  fi
-fi
+fix_chroot_dns
 
 echo " *** add repositories ..."
 
@@ -1434,6 +1463,9 @@ chroot ${ltspBase}${cpuArch} umount /proc || true
 
 echo " *** configuration ..."
 
+if [ "${1:-}" = "batch" -o "${BATCH:-0}" = "1" ]; then
+  true
+else
 INIT=$imageHostname
 imageHostname=$(whiptail --inputbox "Enter the hostname" 8 78 $INIT --title "Hostname" 3>&1 1>&2 2>&3)
 
@@ -1461,6 +1493,7 @@ imageRouter=$(whiptail --inputbox "Enter the IP for gateway/router (leave empty 
 
 INIT=$imageDNS
 imageDNS=$(whiptail --inputbox "Enter the IP for DNS/nameserver (leave empty to skip)" 8 78 $INIT --title "DNS IP" 3>&1 1>&2 2>&3)
+fi
 
 
 #date "+%Y-%m-%d %H:%M:%S"
