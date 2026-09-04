@@ -37,50 +37,60 @@ The build downloads Zyxel factory firmware from `ftp.zyxel.com` automatically an
 
 ---
 
-## Quick Start: Automated Build (Recommended)
+## Quick Start: Building with Make (Recommended)
 
-The top-level `build.sh` script automates all prerequisites (init-scripts archive, downloading the tested Linux 6.12 kernel, generating OMV 7 configuration, and container execution with Podman/Docker):
+A simple [`Makefile`](Makefile) orchestrates the entire build pipeline (including prerequisites, kernel download, container execution, and USB flashing):
 
 ```bash
 git clone https://github.com/petoknm/debian-nas-build.git
 cd debian-nas-build
 
 # 1. Full automated build from scratch (downloads firmware, debian bootstrap, OMV 7, and kernel):
-./build.sh
+make
 
 # 2. Fast rebuild of just the USB disk image from an existing armhf/ tree (~30 seconds):
-./build.sh image
+make image
+
+# 3. Flash the generated image to a USB flash drive (destroys data on the selected drive):
+make flash DISK=/dev/sdX
 ```
 
-### `build.sh` Command Reference:
+### Makefile Targets & Variables:
 
-| Command / Option | Description |
+| Target | Description |
 | :--- | :--- |
-| `./build.sh` | Full build in batch mode (creates `images/debian-nas-bookworm-*.img.gz`) |
-| `./build.sh image` *(or `diskimage`)* | Rebuild only the USB disk image from existing `armhf/` directory |
-| `./build.sh interactive` | Run build with interactive `whiptail` configuration dialogs |
-| `./build.sh prep` | Only verify/download prerequisites without launching container |
-| `./build.sh shell` | Open an interactive `bash` shell inside the build container |
-| `./build.sh clean` | Clean temporary build artifacts and images |
-| `--model <name>` | Target model (`nas542`, `nas540`, `nas520`, `nas326`, `nsa325`, etc.) |
-| `--no-omv` | Build minimal Debian 12 without OpenMediaVault |
-| `--hostname <name>` | Custom hostname (default: `debian-nas`) |
-| `--docker` / `--podman` | Force specific container runtime |
-| `--no-sudo` | Do not prepend container invocation with `sudo` |
+| `make` *(or `make all`)* | Full automated build from scratch for NAS542 with OMV 7 |
+| `make image` | Fast rebuild of the USB disk image from existing `armhf/` (~30s) |
+| `make prep` | Download tested Linux 6.12 kernel and prepare config archives |
+| `make shell` | Drop into an interactive container `bash` shell |
+| `make clean` | Remove temporary build files and generated images |
+| `make flash DISK=/dev/sdX` | Flash the latest built image to a target USB drive |
+| `make help` | Print help and list all targets and variables |
 
-The generated disk image will be saved under `images/`:
+**Customizing Variables**:
+```bash
+make MODEL=nas540           # Target a different hardware model (nas540, nas520, nas326)
+make OMV=false              # Build minimal Debian 12 without OpenMediaVault
+make RUNTIME=docker         # Force Docker instead of Podman
+```
+
+*(You can also invoke [`./build.sh`](build.sh) directly for CLI-style flags: `./build.sh --help`)*
+
+The generated disk image is saved under `images/`:
 ```
 images/debian-nas-bookworm-YY.DDD-armhf.img.gz
 ```
-
-
 
 ---
 
 ## Flashing the USB Drive
 
-Identify your USB stick (`lsblk`) and flash the image using `dd`:
+You can flash directly using the Makefile:
+```bash
+make flash DISK=/dev/sdX
+```
 
+Or manually with `dd`:
 ```bash
 # Decompress and flash (replace /dev/sdX with your actual USB drive)
 zcat images/debian-nas-bookworm-*.img.gz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
