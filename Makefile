@@ -15,6 +15,9 @@ ENABLE_OMV   ?= true
 HOSTNAME     ?= debian-nas
 DISK         ?=
 ZSTD_LEVEL   ?= 9
+MODEL        := $(strip $(subst ",,$(MODEL)))
+ENABLE_OMV   := $(strip $(subst ",,$(ENABLE_OMV)))
+HOSTNAME     := $(strip $(subst ",,$(HOSTNAME)))
 
 # Linux 6.12 Kernel & Zyxel Firmware
 KERNEL_VER   ?= 6.12.95-20260823
@@ -118,7 +121,7 @@ armhf/bin/bash:
 	printf 'devpts /dev/pts devpts gid=5,mode=620 0 0\ntmpfs /tmp tmpfs defaults 0 0\n' > $(R)/etc/fstab
 	DEBIAN_FRONTEND=noninteractive chroot $(R) apt-get update -qq
 	DEBIAN_FRONTEND=noninteractive chroot $(R) apt-get install -y --no-install-recommends \
-		systemd systemd-sysv sudo locales tzdata ca-certificates wget curl kmod dosfstools e2fsprogs fdisk gdisk parted rsync net-tools iproute2 udev
+		systemd systemd-sysv sudo locales tzdata ca-certificates wget curl gnupg kmod dosfstools e2fsprogs fdisk gdisk parted rsync net-tools iproute2 udev
 
 firmware: armhf/firmware/bin/buzzerc
 armhf/firmware/bin/buzzerc:
@@ -136,20 +139,33 @@ armhf/firmware/bin/buzzerc:
 omv:
 ifeq ($(ENABLE_OMV),true)
 	@echo "=== [Stage 3] OpenMediaVault 7 Install & Tuning ==="
-	if [ ! -f $(R)/etc/apt/sources.list.d/openmediavault.list ]; then
-		printf 'deb https://packages.openmediavault.org/public sandworm main\n' > $(R)/etc/apt/sources.list.d/openmediavault.list
-		printf 'Package: linux-image-*\nPin: release a=sandworm\nPin-Priority: -1\n' > $(R)/etc/apt/preferences.d/openmediavault-kernel.pref
-	fi
-	chroot $(R) dpkg -s openmediavault-keyring >/dev/null 2>&1 || { chroot $(R) apt-get update -qq || true; DEBIAN_FRONTEND=noninteractive chroot $(R) apt-get install -y --allow-unauthenticated openmediavault-keyring || true; }
-	chroot $(R) dpkg -s openmediavault >/dev/null 2>&1 || { chroot $(R) apt-get update -qq; DEBIAN_FRONTEND=noninteractive chroot $(R) apt-get install -y --no-install-recommends openmediavault openmediavault-md openmediavault-lvm2 openmediavault-omvextrasorg nginx php8.2-fpm samba nfs-kernel-server mdadm; }
+	rm -f $(R)/etc/resolv.conf && printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > $(R)/etc/resolv.conf
+	mkdir -p $(R)/etc/apt/trusted.gpg.d $(R)/etc/apt/sources.list.d $(R)/etc/apt/preferences.d
+	[ -f $(R)/etc/apt/trusted.gpg.d/openmediavault-archive-keyring.gpg ] || \
+		(curl -fsSL https://packages.openmediavault.org/public/archive.key | gpg --dearmor -o $(R)/etc/apt/trusted.gpg.d/openmediavault-archive-keyring.gpg 2>/dev/null || true)
+	printf 'deb https://packages.openmediavault.org/public sandworm main\n' > $(R)/etc/apt/sources.list.d/openmediavault.list
+	printf 'Package: linux-image-*\nPin: release a=sandworm\nPin-Priority: -1\n' > $(R)/etc/apt/preferences.d/openmediavault-kernel.pref
+	mount -t proc proc $(R)/proc 2>/dev/null || true
+	mount -t sysfs sys $(R)/sys 2>/dev/null || true
+	mount -t devpts devpts $(R)/dev/pts -o gid=5,mode=620 2>/dev/null || true
+	trap 'umount -l $(R)/dev/pts $(R)/sys $(R)/proc 2>/dev/null || true' EXIT
+	chroot $(R) dpkg -s openmediavault >/dev/null 2>&1 || { \
+		DEBIAN_FRONTEND=noninteractive chroot $(R) apt-get update -qq && \
+		DEBIAN_FRONTEND=noninteractive chroot $(R) apt-get install -y --no-install-recommends openmediavault openmediavault-md openmediavault-lvm2; }
+	chroot $(R) dpkg -s openmediavault-omvextrasorg >/dev/null 2>&1 || ( \
+		curl -fsSL -o $(R)/tmp/omvextras.deb https://github.com/OpenMediaVault-Plugin-Developers/packages/raw/master/openmediavault-omvextrasorg_latest_all7.deb 2>/dev/null && \
+		DEBIAN_FRONTEND=noninteractive chroot $(R) apt-get install -y --no-install-recommends /tmp/omvextras.deb 2>/dev/null || true; \
+		rm -f $(R)/tmp/omvextras.deb )
 	sed -i -e 's/session required pam_loginuid.so/session optional pam_loginuid.so/' \
 	       -e 's/#*PermitRootLogin.*/PermitRootLogin yes/' \
 	       -e 's/#*PasswordAuthentication.*/PasswordAuthentication yes/' $(R)/etc/ssh/sshd_config $(R)/etc/pam.d/sshd 2>/dev/null || true
 	sed -i 's|^auth.*pam_faillock.so|#&|' $(R)/etc/pam.d/openmediavault* 2>/dev/null || true
-	echo "root:$(DEFHASH)" | chroot $(R) chpasswd -e 2>/dev/null || true
-	echo "admin:$(DEFHASH)" | chroot $(R) chpasswd -e 2>/dev/null || true
+	echo 'root:$(DEFHASH)' | chroot $(R) chpasswd -e 2>/dev/null || true
+	echo 'admin:$(DEFHASH)' | chroot $(R) chpasswd -e 2>/dev/null || true
 	[ -f $(R)/etc/php/8.2/fpm/pool.d/openmediavault-webgui.conf ] && sed -i 's/pm.max_children = .*/pm.max_children = 4/' $(R)/etc/php/8.2/fpm/pool.d/openmediavault-webgui.conf 2>/dev/null || true
 	for f in $(R)/var/www/openmediavault/main.*.js ; do [ -f "$$f" ] && sed -i 's/defaultTo(Be,500)/defaultTo(Be,2500)/g' "$$f" 2>/dev/null || true; done
+	umount -l $(R)/dev/pts $(R)/sys $(R)/proc 2>/dev/null || true
+	chroot $(R) dpkg -s openmediavault >/dev/null
 endif
 
 kernel:
