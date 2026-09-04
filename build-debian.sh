@@ -937,7 +937,7 @@ fi
 
 
 echo " *** install packages on build host ..."
-apt-get install -y debootstrap gdisk qemu-user-static binfmt-support whiptail dosfstools rsync patch wget gnupg ca-certificates python3-minimal fdisk e2fsprogs binutils parted
+apt-get install -y debootstrap gdisk qemu-user-static binfmt-support whiptail dosfstools rsync patch wget gnupg ca-certificates python3-minimal fdisk e2fsprogs binutils parted unzip
 
 [ -e ${ltspBase}etc/${distBrandLower}-build.conf ] && . ${ltspBase}etc/${distBrandLower}-build.conf
 [ -e ${ltspBase}${cpuArch}/etc/${distBrandLower}-build.conf ] && . ${ltspBase}${cpuArch}/etc/${distBrandLower}-build.conf

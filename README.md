@@ -28,16 +28,89 @@ This project builds customized, bootable **Debian 12 (Bookworm)** disk images wi
 You can build on any modern Linux distribution using **Podman** or **Docker** (recommended for isolated, reproducible builds).
 
 Required tools on the build host:
-- `podman` or `docker`
+- `podman` or `docker` (loop-device access needs `--privileged` and usually `sudo`; rootless Podman fails with `losetup: cannot find an unused loop device`)
+- `wget` (to fetch the kernel zip)
+- Several GB of free disk (debootstrap + OpenMediaVault + the image is large)
 - A USB flash drive (at least 4GB or 8GB recommended)
+
+The build downloads Zyxel factory firmware from `ftp.zyxel.com` automatically and unpacks it under `fw/`. You do not prepare that tree by hand.
 
 ---
 
 ## Quick Start: Building the Image
 
-### 1. Build using Podman / Docker
+A git clone is **not** enough to run `./build-debian.sh diskimage`. That mode only packs an already-built `armhf/` rootfs. A first build needs the Bookworm init-scripts archive, a NAS5xx kernel zip, a config for batch/OMV, then a full `batch` run.
 
-Run the disk image generator inside a Debian Bookworm container:
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/petoknm/debian-nas-build.git
+cd debian-nas-build
+```
+
+### 2. Create the Bookworm init-scripts archive
+
+Git only ships `archives/debian-{stretch,buster,bullseye}-init-scripts.tar.gz`. The build extracts `archives/*debian-*bookworm*-init-scripts*.tar.gz` and, if that file is missing, **silently skips it**. The Bookworm tarball is a byte-for-byte copy of the Bullseye one:
+
+```bash
+cp archives/debian-bullseye-init-scripts.tar.gz archives/debian-bookworm-init-scripts.tar.gz
+```
+
+### 3. Download the NAS5xx kernel zip
+
+The 6.12 kernel is not in git. Place the zip from [scpcom/linux](https://github.com/scpcom/linux/releases) in `kernel/` (filename must match `linux-image-*-armhf.zip`). The tree this README was written against used:
+
+```bash
+mkdir -p kernel
+cd kernel
+wget -N https://github.com/scpcom/linux/releases/download/v6.12.95-7018-sbc/linux-image-6.12.95-20260823-nas5xx-armhf.zip
+cd ..
+```
+
+Newer `linux-image-*-nas5xx-armhf.zip` assets from later `scpcom/linux` releases can be substituted. Optional `kernel/gcc-*-armhf.zip` and `kernel/linux-tools-*-armhf.zip` packages are not required for the OMV image described here.
+
+Without this zip the build still finishes, but it will not install Linux 6.12; first boot would only have the stock factory `uImage` extracted from firmware.
+
+### 4. Write a batch config (skip the whiptail menus)
+
+Without `etc/debian-build.conf`, a non-interactive run keeps `imageOmv=false` and `boardModel=nas540`. For OpenMediaVault 7 on a NAS542 with DHCP:
+
+```bash
+mkdir -p etc
+cat > etc/debian-build.conf << 'EOF'
+boardModel=nas542
+FWGETURL="ftp://ftp.zyxel.com/NAS542/firmware/NAS542_V5.21(ABAG.0)C0.zip"
+FWUSEVER="newer"
+fanSpeed=keep
+firstUser=share
+imageMdMount=false
+imageOmv=true
+imageOmvInit=true
+imageHostname=debian-nas
+imageEth0Ip=dhcp
+imageEth0Mask=255.255.255.0
+imageEth1Ip=dhcp
+imageEth1Mask=255.255.255.0
+imageRouter=
+imageDNS=
+installRecommends=1
+installISCSITarget=0
+installMailServer=1
+installNFSServer=1
+installNTPServer=0
+installSMBServer=1
+installMiscServer=1
+installWifi=0
+installIpmitool=0
+installSmartctl=1
+EOF
+```
+
+Change `boardModel` / `FWGETURL` for NAS520, NAS540, NAS326, or Kirkwood models. For an interactive build, omit this file and run without `batch`.
+
+### 5. Full build in Podman / Docker
+
+This installs host tools (including `unzip`, which a stock `debian:bookworm` image does not have), runs debootstrap, OpenMediaVault, firmware extract, kernel install, and writes `images/*.img.gz`. The first run takes a long time.
 
 ```bash
 sudo podman run --rm -it --privileged \
@@ -45,12 +118,23 @@ sudo podman run --rm -it --privileged \
   -v "$(pwd)":/build \
   -w /build \
   debian:bookworm \
-  bash -c "apt-get update && apt-get install -y fdisk dosfstools e2fsprogs gdisk rsync binutils parted && ./build-debian.sh diskimage"
+  bash -c "apt-get update && apt-get install -y fdisk dosfstools e2fsprogs gdisk rsync binutils parted unzip && ./build-debian.sh batch"
 ```
 
-> **Note:** If you are building from scratch (including `debootstrap` and package downloads), run `./build-debian.sh` without the `diskimage` argument.
+`docker` works the same way if you are in the `docker` group. Do not drop `--privileged` or `/dev`; packing the image needs loop devices.
 
-The output image will be generated under the `images/` directory:
+To rebuild only the USB image from an existing `armhf/` tree (after a successful full build):
+
+```bash
+sudo podman run --rm -it --privileged \
+  -v /dev:/dev \
+  -v "$(pwd)":/build \
+  -w /build \
+  debian:bookworm \
+  bash -c "apt-get update && apt-get install -y fdisk dosfstools e2fsprogs gdisk rsync binutils parted unzip && ./build-debian.sh diskimage"
+```
+
+The output image is written under `images/`:
 ```
 images/debian-nas-bookworm-YY.DDD-armhf.img.gz
 ```
