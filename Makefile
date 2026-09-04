@@ -1,227 +1,197 @@
 # ==============================================================================
 # Makefile for Debian NAS Build (Zyxel NAS5xx / OpenMediaVault 7)
 # ==============================================================================
-
-SHELL := /usr/bin/env bash
+.ONESHELL:
+SHELL        := /bin/bash
+.SHELLFLAGS  := -eu -o pipefail -c
 .DEFAULT_GOAL := all
 
-# User-configurable parameters
-MODEL       ?= nas542
-OMV         ?= true
-HOSTNAME    ?= debian-nas
-RUNTIME     ?= auto
-SUDO        ?= auto
-DISK        ?=
+IN_CONTAINER ?= 0
 
-# Tested Linux 6.12 NAS5xx Kernel package
-KERNEL_VERSION := 6.12.95-20260823
-KERNEL_ZIP     := linux-image-$(KERNEL_VERSION)-nas5xx-armhf.zip
-KERNEL_URL     := https://github.com/scpcom/linux/releases/download/v6.12.95-7018-sbc/$(KERNEL_ZIP)
+# Configuration
+-include .config
+MODEL        ?= nas542
+ENABLE_OMV   ?= true
+HOSTNAME     ?= debian-nas
+DISK         ?=
+ZSTD_LEVEL   ?= 9
 
-# Container dependencies
-CONTAINER_PKGS := fdisk dosfstools e2fsprogs gdisk rsync binutils parted unzip debootstrap qemu-user-static binfmt-support whiptail patch wget gnupg ca-certificates python3-minimal
+# Linux 6.12 Kernel & Zyxel Firmware
+KERNEL_VER   ?= 6.12.95-20260823
+KERNEL_ZIP   := linux-image-$(KERNEL_VER)-nas5xx-armhf.zip
+KERNEL_URL   := https://github.com/scpcom/linux/releases/download/v6.12.95-7018-sbc/$(KERNEL_ZIP)
+FW_URL_nas542 := ftp://ftp.zyxel.com/NAS542/firmware/NAS542_V5.21(ABAG.0)C0.zip
+FW_URL_nas540 := ftp://ftp.zyxel.com/NAS540/firmware/NAS540_V5.21(AATB.0)C0.zip
+FW_URL_nas520 := ftp://ftp.zyxel.com/NAS520/firmware/NAS520_V5.21(AASZ.0)C0.zip
+FW_URL_nas326 := ftp://ftp.zyxel.com/NAS326/firmware/NAS326_V5.21(AAZF.0)C0.zip
+FW_URL        := $(FW_URL_$(MODEL))
 
-# Map model to factory firmware download URL
-FW_URL_nas542  := ftp://ftp.zyxel.com/NAS542/firmware/NAS542_V5.21(ABAG.0)C0.zip
-FW_URL_nas540  := ftp://ftp.zyxel.com/NAS540/firmware/NAS540_V5.21(AATB.0)C0.zip
-FW_URL_nas520  := ftp://ftp.zyxel.com/NAS520/firmware/NAS520_V5.21(AASZ.0)C0.zip
-FW_URL_nas326  := ftp://ftp.zyxel.com/NAS326/firmware/NAS326_V5.21(AAZF.0)C0.zip
-FW_URL_nsa325  := ftp://ftp.zyxel.com/NSA325/firmware/NSA325_V4.81(AAAJ.0)C0.zip
-FW_URL_nsa320s := ftp://ftp.zyxel.com/NSA320S/firmware/NSA320S_V4.75(AANV.1)C0.zip
-FW_URL_nsa310s := ftp://ftp.zyxel.com/NSA310S/firmware/NSA310S_V4.75(AALH.1)C0.zip
-FW_URL         := $(FW_URL_$(MODEL))
+# Container Runtime
+CONTAINER    ?= $(shell if docker info >/dev/null 2>&1; then which docker; else which podman 2>/dev/null; fi)
+SUDO         ?= $(if $(shell $(CONTAINER) info >/dev/null 2>&1 && echo ok),,sudo)
+BUILDER_IMG  := debian-nas-builder
 
-# Helper macro to resolve container engine command (podman or docker)
-define get_container_cmd
-	if [ "$(RUNTIME)" = "auto" ]; then \
-		if command -v podman >/dev/null 2>&1; then \
-			ENGINE="podman"; \
-		elif command -v docker >/dev/null 2>&1; then \
-			ENGINE="docker"; \
-		else \
-			echo "ERROR: Neither 'podman' nor 'docker' is installed."; exit 1; \
-		fi; \
-	else \
-		ENGINE="$(RUNTIME)"; \
-	fi; \
-	CMD=""; \
-	if [ "$(SUDO)" = "true" ] || { [ "$(SUDO)" = "auto" ] && [ "$$EUID" -ne 0 ]; }; then \
-		CMD="sudo "; \
-	fi; \
-	echo "$${CMD}$${ENGINE}"
-endef
+.PHONY: all full image diskimage bootstrap firmware omv kernel prep menuconfig config shell clean flash help builder-image
 
-.PHONY: all full image diskimage prep shell interactive clean flash help
+# ==============================================================================
+# HOST ORCHESTRATION (IN_CONTAINER == 0)
+# ==============================================================================
+ifeq ($(IN_CONTAINER),0)
 
-# ------------------------------------------------------------------------------
-# Primary Targets
-# ------------------------------------------------------------------------------
+.config: .config.default
+	@cp $< $@
 
-all: full ## Build complete Debian 12 + OMV 7 image from scratch (default)
+archives/debian-bookworm-init-scripts.tar.gz: archives/debian-bullseye-init-scripts.tar.gz
+	@mkdir -p archives && ln -sf debian-bullseye-init-scripts.tar.gz $@
 
-full: prep ## Build full OS and disk image in batch mode
-	@ENGINE_CMD=$$($(call get_container_cmd)); \
-	echo "=== Launching build environment via $$ENGINE_CMD ==="; \
-	$$ENGINE_CMD run --rm -it --privileged \
-		-v /dev:/dev \
-		-v "$$(pwd)":/build \
-		-w /build \
-		debian:bookworm \
-		bash -c "apt-get update && apt-get install -y $(CONTAINER_PKGS) && ./build-debian.sh batch"
-	@echo ""; \
-	echo "=== Build finished ==="; \
-	if compgen -G "images/*.img.gz" > /dev/null; then \
-		echo "Generated disk image(s):"; \
-		ls -lh images/*.img.gz; \
-	fi
-
-image: diskimage ## Alias for diskimage
-diskimage: ## Fast rebuild of USB disk image from existing armhf/ tree (~30s)
-	@ENGINE_CMD=$$($(call get_container_cmd)); \
-	echo "=== Rebuilding disk image via $$ENGINE_CMD ==="; \
-	$$ENGINE_CMD run --rm -it --privileged \
-		-v /dev:/dev \
-		-v "$$(pwd)":/build \
-		-w /build \
-		debian:bookworm \
-		bash -c "apt-get update && apt-get install -y $(CONTAINER_PKGS) && ./build-debian.sh diskimage"
-	@echo ""; \
-	echo "=== Build finished ==="; \
-	if compgen -G "images/*.img.gz" > /dev/null; then \
-		echo "Generated disk image(s):"; \
-		ls -lh images/*.img.gz; \
-	fi
-
-interactive: prep ## Run build with interactive whiptail menus inside container
-	@ENGINE_CMD=$$($(call get_container_cmd)); \
-	$$ENGINE_CMD run --rm -it --privileged \
-		-v /dev:/dev \
-		-v "$$(pwd)":/build \
-		-w /build \
-		debian:bookworm \
-		bash -c "apt-get update && apt-get install -y $(CONTAINER_PKGS) && ./build-debian.sh"
-
-shell: ## Drop into an interactive container bash shell
-	@ENGINE_CMD=$$($(call get_container_cmd)); \
-	$$ENGINE_CMD run --rm -it --privileged \
-		-v /dev:/dev \
-		-v "$$(pwd)":/build \
-		-w /build \
-		debian:bookworm \
-		bash -c "apt-get update && apt-get install -y $(CONTAINER_PKGS) && exec bash"
-
-# ------------------------------------------------------------------------------
-# Prerequisites Preparation
-# ------------------------------------------------------------------------------
-
-prep: ## Prepare prerequisites (archives, kernel zip, and config)
-	@echo "=== [1/3] Preparing Bookworm init scripts ==="
-	@mkdir -p archives
-	@if [ ! -e archives/debian-bookworm-init-scripts.tar.gz ]; then \
-		if [ -e archives/debian-bullseye-init-scripts.tar.gz ]; then \
-			echo "Linking archives/debian-bookworm-init-scripts.tar.gz -> debian-bullseye-init-scripts.tar.gz"; \
-			ln -sf debian-bullseye-init-scripts.tar.gz archives/debian-bookworm-init-scripts.tar.gz; \
-		else \
-			echo "WARNING: archives/debian-bullseye-init-scripts.tar.gz is missing!"; \
-		fi; \
-	else \
-		echo "Bookworm init scripts archive present."; \
-	fi
-	@echo "=== [2/3] Checking Linux kernel package ==="
+kernel/$(KERNEL_ZIP):
 	@mkdir -p kernel
-	@FOUND_KRN=$$(ls kernel/linux-image-*-armhf.zip 2>/dev/null | head -n1 || true); \
-	if [ -z "$$FOUND_KRN" ]; then \
-		echo "Downloading tested Linux 6.12 NAS5xx kernel..."; \
-		if command -v wget >/dev/null 2>&1; then \
-			wget -q --show-progress -O "kernel/$(KERNEL_ZIP)" "$(KERNEL_URL)"; \
-		elif command -v curl >/dev/null 2>&1; then \
-			curl -L --progress-bar -o "kernel/$(KERNEL_ZIP)" "$(KERNEL_URL)"; \
-		else \
-			echo "ERROR: Neither 'wget' nor 'curl' is installed to download kernel."; exit 1; \
-		fi; \
-		echo "Kernel download complete: kernel/$(KERNEL_ZIP)"; \
-	else \
-		echo "Using kernel package: $$FOUND_KRN"; \
-	fi
-	@echo "=== [3/3] Generating build configuration ==="
-	@mkdir -p etc
-	@if [ ! -f etc/debian-build.conf ]; then \
-		printf "boardModel=%s\nFWGETURL=\"%s\"\nFWUSEVER=\"newer\"\nfanSpeed=keep\nfirstUser=share\nimageMdMount=false\nimageOmv=%s\nimageOmvInit=%s\nimageHostname=%s\nimageEth0Ip=dhcp\nimageEth0Mask=255.255.255.0\nimageEth1Ip=dhcp\nimageEth1Mask=255.255.255.0\nimageRouter=\nimageDNS=\ninstallRecommends=1\ninstallISCSITarget=0\ninstallMailServer=1\ninstallNFSServer=1\ninstallNTPServer=0\ninstallSMBServer=1\ninstallMiscServer=1\ninstallWifi=0\ninstallIpmitool=0\ninstallSmartctl=1\n" \
-			"$(MODEL)" "$(FW_URL)" "$(OMV)" "$(OMV)" "$(HOSTNAME)" > etc/debian-build.conf; \
-		echo "Created etc/debian-build.conf (Model: $(MODEL), OMV: $(OMV))"; \
-	else \
-		echo "Using existing etc/debian-build.conf"; \
-	fi
-	@echo "Prerequisites prepared successfully."
+	curl -Ls -o $@ $(KERNEL_URL) || wget -qO $@ $(KERNEL_URL)
 
-# ------------------------------------------------------------------------------
-# Flashing Target
-# ------------------------------------------------------------------------------
+prep: .config archives/debian-bookworm-init-scripts.tar.gz kernel/$(KERNEL_ZIP)
+
+builder-image:
+	@if [ -n "$(FORCE)" ] || ! $(CONTAINER) image inspect $(BUILDER_IMG) >/dev/null 2>&1; then
+		$(SUDO) $(CONTAINER) build -t $(BUILDER_IMG) -f Containerfile .
+	fi
+
+DOCKER_CMD = $(SUDO) $(CONTAINER) run --rm $(if $(shell test -t 0 && echo 1),-it,-i) --privileged -v /dev:/dev -v $(CURDIR):/build -w /build $(BUILDER_IMG) make IN_CONTAINER=1
+
+all: builder-image prep       ## Full automated build from scratch (default)
+full: builder-image prep      ## Full automated build pipeline inside container
+image: diskimage              ## Alias for diskimage
+diskimage: builder-image prep ## Fast rebuild of USB disk image (~30s)
+bootstrap: builder-image prep ## Stage 1: Run debootstrap inside container
+firmware: builder-image prep  ## Stage 2: Extract Zyxel firmware tools inside container
+omv: builder-image prep       ## Stage 3: Install & configure OpenMediaVault 7 inside container
+kernel: builder-image prep    ## Stage 4: Deploy Linux 6.12 kernel & NAND flashers inside container
+
+all full diskimage bootstrap firmware omv kernel:
+	@$(DOCKER_CMD) $@
+
+shell: builder-image ## Drop into an interactive container shell
+	@$(SUDO) $(CONTAINER) run --rm -it --privileged -v /dev:/dev -v $(CURDIR):/build -w /build $(BUILDER_IMG) bash
+
+menuconfig: config ## Alias for config
+config: ## Launch interactive Whiptail menu to configure options & update .config
+	@./menuconfig.sh
 
 flash: ## Flash latest built image to USB drive (Usage: make flash DISK=/dev/sdX)
-	@if [ -z "$(DISK)" ]; then \
-		echo "ERROR: DISK variable is required."; \
-		echo "Usage: make flash DISK=/dev/sdX"; \
-		echo ""; \
-		echo "Available removable block devices:"; \
-		lsblk -d -o NAME,SIZE,MODEL,TRAN | grep -E 'usb|TRAN' || lsblk; \
-		exit 1; \
-	fi
-	@if [ ! -b "$(DISK)" ]; then \
-		echo "ERROR: '$(DISK)' is not a valid block device."; exit 1; \
-	fi
-	@LATEST_IMG=$$(ls -t images/*.img.gz 2>/dev/null | head -n1); \
-	if [ -z "$$LATEST_IMG" ]; then \
-		echo "ERROR: No image found in images/. Run 'make' first."; exit 1; \
-	fi; \
-	echo "Target disk: $(DISK)"; \
-	echo "Image file:  $$LATEST_IMG"; \
-	echo ""; \
-	read -p "WARNING: All data on $(DISK) will be DESTROYED. Continue? [y/N] " -n 1 -r; \
-	echo ""; \
-	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		echo "Flashing to $(DISK)..."; \
-		zcat "$$LATEST_IMG" | sudo dd of=$(DISK) bs=4M status=progress conv=fsync; \
-		sync; \
-		echo "Flashing complete! You can now insert $(DISK) into your NAS."; \
-	else \
-		echo "Flashing aborted."; exit 1; \
-	fi
+	@test -b "$(DISK)" || { echo "ERROR: DISK=/dev/sdX block device required."; exit 1; }
+	IMG=$$(ls -t images/*.img.zst images/*.img.gz 2>/dev/null | head -n1 || true)
+	test -n "$$IMG" || { echo "ERROR: No image found in images/. Run 'make' first."; exit 1; }
+	read -p "Overwrite $(DISK) with $$IMG? [y/N] " -n 1 -r; echo ""
+	[[ $$REPLY =~ ^[Yy]$$ ]] || exit 1
+	zstd -dc "$$IMG" | sudo dd of=$(DISK) bs=4M status=progress conv=fsync && sync
+	echo "Flashing complete!"
 
-# ------------------------------------------------------------------------------
-# Clean Action
-# ------------------------------------------------------------------------------
-
-clean: ## Clean generated disk images and temporary build artifacts
-	@echo "Cleaning temporary build artifacts and images..."
-	@rm -rf images/*
-	@rm -f armhf/tmp/*
-	@echo "Clean complete."
-
-# ------------------------------------------------------------------------------
-# Help
-# ------------------------------------------------------------------------------
+clean: ## Clean generated disk images and temporary artifacts
+	rm -rf images/* armhf/tmp/*
 
 help: ## Show this help message
-	@echo "Debian NAS Build System"
-	@echo ""
-	@echo "Usage:"
-	@echo "  make [target] [VARIABLE=value]"
-	@echo ""
-	@echo "Common Targets:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
-	@echo ""
-	@echo "Variables:"
-	@echo "  MODEL       Target NAS hardware (default: nas542)"
-	@echo "              Supported: nas542, nas540, nas520, nas326, nsa325, nsa320s, nsa310s"
-	@echo "  OMV         Include OpenMediaVault 7 (default: true, set false for minimal Debian)"
-	@echo "  HOSTNAME    System hostname (default: debian-nas)"
-	@echo "  RUNTIME     Container runtime (default: auto, or podman, docker)"
-	@echo "  SUDO        Prepend container command with sudo (default: auto, or true, false)"
-	@echo "  DISK        Target USB device for 'make flash' (e.g., /dev/sdb)"
-	@echo ""
-	@echo "Examples:"
-	@echo "  make                     # Full automated build for NAS542"
-	@echo "  make image               # Fast rebuild of USB image (~30s)"
-	@echo "  make MODEL=nas540        # Build for NAS540"
-	@echo "  make flash DISK=/dev/sdc # Flash latest image to /dev/sdc"
+	@echo "Usage: make [target] [VARIABLE=value]"
+	@grep -h -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
+
+# ==============================================================================
+# CONTAINER EXECUTION (IN_CONTAINER == 1)
+# ==============================================================================
+else
+
+R        := armhf
+BOOTDIR  := $(R)/boot
+DEFHASH  := $$6$$rAEPV1reSeT/j8P8$$ULVwQssIR35sAyszFnjsoyeBDc21C7m7yBtDX8CjkcR3Kddv1S6v.Cel6umhUiGtCgXbMN1CackdI0vBMf0LU0
+
+all: full
+full: bootstrap firmware omv kernel diskimage
+	@echo "=== Full Build Complete ==="
+
+bootstrap: armhf/bin/bash
+armhf/bin/bash:
+	@echo "=== [Stage 1] Debian 12 Bootstrap ==="
+	mkdir -p $(R)
+	debootstrap --arch=armhf --foreign bookworm $(R) http://deb.debian.org/debian
+	cp -p /usr/bin/qemu-arm-static $(R)/usr/bin/ 2>/dev/null || true
+	chroot $(R) /debootstrap/debootstrap --second-stage
+	printf 'deb http://deb.debian.org/debian bookworm main contrib non-free-firmware\n' > $(R)/etc/apt/sources.list
+	echo "$(HOSTNAME)" > $(R)/etc/hostname
+	printf 'nameserver 1.1.1.1\n' > $(R)/etc/resolv.conf
+	printf 'devpts /dev/pts devpts gid=5,mode=620 0 0\ntmpfs /tmp tmpfs defaults 0 0\n' > $(R)/etc/fstab
+	DEBIAN_FRONTEND=noninteractive chroot $(R) apt-get update -qq
+	DEBIAN_FRONTEND=noninteractive chroot $(R) apt-get install -y --no-install-recommends \
+		systemd systemd-sysv sudo locales tzdata ca-certificates wget curl kmod dosfstools e2fsprogs fdisk gdisk parted rsync net-tools iproute2 udev
+
+firmware: armhf/firmware/bin/buzzerc
+armhf/firmware/bin/buzzerc:
+	@echo "=== [Stage 2] Vendor Firmware Extraction ($(MODEL)) ==="
+	mkdir -p fw $(R)/firmware/bin $(R)/usr/local/bin
+	FW_FILE=fw/$$(basename "$(FW_URL)")
+	[ -n "$(FW_URL)" ] && [ ! -f "$$FW_FILE" ] && curl -Ls -o "$$FW_FILE" "$(FW_URL)" || true
+	[ -f "$$FW_FILE" ] && unzip -qo "$$FW_FILE" -d fw/unpack 2>/dev/null || true
+	for t in buzzerc info_printenv info_setenv bareboxenv flash_erase nandwrite; do
+		f=$$(find fw/ -name "$$t" 2>/dev/null | head -n1 || true)
+		[ -n "$$f" ] && cp -p "$$f" $(R)/firmware/bin/ && cp -p "$$f" $(R)/usr/local/bin/ || true
+	done
+	rm -rf fw/unpack
+
+omv:
+ifeq ($(ENABLE_OMV),true)
+	@echo "=== [Stage 3] OpenMediaVault 7 Install & Tuning ==="
+	if [ ! -f $(R)/etc/apt/sources.list.d/openmediavault.list ]; then
+		printf 'deb https://packages.openmediavault.org/public sandworm main\n' > $(R)/etc/apt/sources.list.d/openmediavault.list
+		printf 'Package: linux-image-*\nPin: release a=sandworm\nPin-Priority: -1\n' > $(R)/etc/apt/preferences.d/openmediavault-kernel.pref
+	fi
+	chroot $(R) dpkg -s openmediavault-keyring >/dev/null 2>&1 || { chroot $(R) apt-get update -qq || true; DEBIAN_FRONTEND=noninteractive chroot $(R) apt-get install -y --allow-unauthenticated openmediavault-keyring || true; }
+	chroot $(R) dpkg -s openmediavault >/dev/null 2>&1 || { chroot $(R) apt-get update -qq; DEBIAN_FRONTEND=noninteractive chroot $(R) apt-get install -y --no-install-recommends openmediavault openmediavault-md openmediavault-lvm2 openmediavault-omvextrasorg nginx php8.2-fpm samba nfs-kernel-server mdadm; }
+	sed -i -e 's/session required pam_loginuid.so/session optional pam_loginuid.so/' \
+	       -e 's/#*PermitRootLogin.*/PermitRootLogin yes/' \
+	       -e 's/#*PasswordAuthentication.*/PasswordAuthentication yes/' $(R)/etc/ssh/sshd_config $(R)/etc/pam.d/sshd 2>/dev/null || true
+	sed -i 's|^auth.*pam_faillock.so|#&|' $(R)/etc/pam.d/openmediavault* 2>/dev/null || true
+	echo "root:$(DEFHASH)" | chroot $(R) chpasswd -e 2>/dev/null || true
+	echo "admin:$(DEFHASH)" | chroot $(R) chpasswd -e 2>/dev/null || true
+	[ -f $(R)/etc/php/8.2/fpm/pool.d/openmediavault-webgui.conf ] && sed -i 's/pm.max_children = .*/pm.max_children = 4/' $(R)/etc/php/8.2/fpm/pool.d/openmediavault-webgui.conf 2>/dev/null || true
+	for f in $(R)/var/www/openmediavault/main.*.js ; do [ -f "$$f" ] && sed -i 's/defaultTo(Be,500)/defaultTo(Be,2500)/g' "$$f" 2>/dev/null || true; done
+endif
+
+kernel:
+	@echo "=== [Stage 4] Deploying Linux 6.12 Kernel & Overlay ==="
+	mkdir -p $(BOOTDIR) $(R)/usr/local/bin
+	if [ -f kernel/$(KERNEL_ZIP) ]; then
+		TMP=$$(mktemp -d)
+		unzip -qo kernel/$(KERNEL_ZIP) -d "$$TMP"
+		[ -f "$$TMP/uImage" ] && cp -p "$$TMP/uImage" $(BOOTDIR)/ && cp -p "$$TMP/uImage" kernel/ 2>/dev/null || true
+		find "$$TMP" -name "*.dtb" -exec cp -p {} $(BOOTDIR)/ \;
+		find "$$TMP" -name "*.deb" -exec chroot $(R) dpkg -i --force-depends {} \; 2>/dev/null || true
+		rm -rf "$$TMP"
+	fi
+	cp -a overlay/* $(R)/ 2>/dev/null || true
+	chmod +x $(R)/usr/local/bin/zy-* $(R)/debinit.sh 2>/dev/null || true
+
+image: diskimage
+diskimage:
+	@echo "=== [Stage 5] Generating Disk Image ==="
+	mkdir -p images mnt_tmp
+	for i in $$(seq 0 7); do [ -e /dev/loop$$i ] || mknod /dev/loop$$i b 7 $$i 2>/dev/null || true; done
+	IMG="images/debian-nas-bookworm-$$(date +%y.%j)-armhf.img"
+	rm -f "$$IMG" "$${IMG}.zst"
+	ROOT_M=$$(( $$(du -sk $(R) | cut -f1) / 1024 + 512 ))
+	dd if=/dev/zero of="$$IMG" bs=1M count=1 seek=$$(( 97 + ROOT_M + 32 )) status=none
+	sgdisk -o -n 1:2048:+95M -c 1:TC_BOOT -t 1:0700 -u 1:54cdf5da-deb1-b007-a694-32880502ef34 \
+	          -n 2:0:+$${ROOT_M}M -c 2:TC_ROOT -t 2:8300 -u 2:54cdf5da-deb1-f007-a694-32880502ef34 "$$IMG" > /dev/null
+	BDEV=$$(losetup -o 1M --sizelimit 95M -f --show "$$IMG")
+	RDEV=$$(losetup -o 96M --sizelimit $${ROOT_M}M -f --show "$$IMG")
+	mkfs.vfat -n TC_BOOT -S 512 -s 16 "$$BDEV" > /dev/null
+	mkfs.ext4 -F -O ^metadata_csum -L TC_ROOT -m 0 "$$RDEV" > /dev/null
+	mount "$$RDEV" mnt_tmp && mkdir -p mnt_tmp/boot && mount -t vfat "$$BDEV" mnt_tmp/boot
+	[ -d archives ] && for f in archives/*-boot*.tar.gz; do [ -e "$$f" ] && tar xzf "$$f" -C $(BOOTDIR) 2>/dev/null; done || true
+	[ ! -e $(BOOTDIR)/uImage ] && cp -p kernel/uImage $(BOOTDIR)/ 2>/dev/null || true
+	rsync -aHAX --exclude='/boot/*' --exclude='/mnt_tmp' --exclude='/images' $(R)/ mnt_tmp/
+	rsync -rtLv --modify-window=1 $(BOOTDIR)/ mnt_tmp/boot/
+	grep -q "TC_ROOT" mnt_tmp/etc/fstab || echo 'LABEL=TC_ROOT / ext4 defaults,noatime 0 1' >> mnt_tmp/etc/fstab
+	grep -q "TC_BOOT" mnt_tmp/etc/fstab || echo 'LABEL=TC_BOOT /boot vfat defaults,noatime 0 0' >> mnt_tmp/etc/fstab
+	sync && umount mnt_tmp/boot mnt_tmp && rm -rf mnt_tmp
+	losetup -d "$$BDEV" "$$RDEV"
+	zstd -$(ZSTD_LEVEL) -f --rm "$$IMG"
+	chown $$(stat -c '%u:%g' images 2>/dev/null || echo 1000:1000) "$${IMG}.zst" 2>/dev/null || true
+	echo "Generated: $${IMG}.zst ($$(ls -lh $${IMG}.zst | awk '{print $$5}'))"
+
+endif

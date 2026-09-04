@@ -1,0 +1,13 @@
+#!/bin/bash
+set -e
+
+WORKDIR="/tmp/barebox_env"
+mkdir -p "$WORKDIR"
+cd "$WORKDIR"
+
+[ -f /etc/barebox.env ] && /usr/local/bin/bareboxenv -s /etc/barebox.env .
+mkdir -p bin
+if [ -f bin/boot ]; then
+    sed -i "s/if \[ x\$next_bootfrom = x2 \]; then/if [ x\$next_bootfrom = x1 -o x\$next_bootfrom = x2 ]; then/g" bin/boot
+fi
+/usr/local/bin/bareboxenv -z . /etc/barebox.env || true

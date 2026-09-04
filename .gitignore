@@ -3,3 +3,4 @@ etc/
 fw/
 images/
 kernel/
+.config

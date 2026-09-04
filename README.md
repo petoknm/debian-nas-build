@@ -39,44 +39,52 @@ The build downloads Zyxel factory firmware from `ftp.zyxel.com` automatically an
 
 ## Quick Start: Building with Make (Recommended)
 
-A simple [`Makefile`](Makefile) orchestrates the entire build pipeline (including prerequisites, kernel download, container execution, and USB flashing):
+A compact, modular [`Makefile`](Makefile) orchestrates the entire build pipeline (including prerequisites, kernel download, container execution, and USB flashing):
 
 ```bash
 git clone https://github.com/petoknm/debian-nas-build.git
 cd debian-nas-build
 
-# 1. Full automated build from scratch (downloads firmware, debian bootstrap, OMV 7, and kernel):
+# 1. (Optional) Configure options interactively via Whiptail TUI:
+make menuconfig
+
+# 2. Full automated build from scratch (runs stages 01 through 05):
 make
 
-# 2. Fast rebuild of just the USB disk image from an existing armhf/ tree (~30 seconds):
+# 3. Fast rebuild of just the USB disk image from an existing armhf/ tree (~30 seconds):
 make image
 
-# 3. Flash the generated image to a USB flash drive (destroys data on the selected drive):
+# 4. Flash the generated image to a USB flash drive (destroys data on the selected drive):
 make flash DISK=/dev/sdX
 ```
 
-### Makefile Targets & Variables:
+### Makefile Targets:
 
 | Target | Description |
 | :--- | :--- |
-| `make` *(or `make all`)* | Full automated build from scratch for NAS542 with OMV 7 |
+| `make` *(or `make all`)* | Full automated build from scratch (runs stages 01 through 05) |
+| `make menuconfig` | Interactive Whiptail TUI to configure model, OMV, and network |
 | `make image` | Fast rebuild of the USB disk image from existing `armhf/` (~30s) |
+| `make bootstrap` | Stage 1: Run Debian 12 (Bookworm) debootstrap & base packages |
+| `make firmware` | Stage 2: Extract Zyxel vendor hardware tools from firmware |
+| `make omv` | Stage 3: Install & configure OpenMediaVault 7 with ARM tuning |
+| `make kernel` | Stage 4: Deploy Linux 6.12 BSP and automated NAND boot flashers |
 | `make prep` | Download tested Linux 6.12 kernel and prepare config archives |
 | `make shell` | Drop into an interactive container `bash` shell |
 | `make clean` | Remove temporary build files and generated images |
 | `make flash DISK=/dev/sdX` | Flash the latest built image to a target USB drive |
 | `make help` | Print help and list all targets and variables |
 
-**Customizing Variables**:
+**Customizing Options without TUI**:
 ```bash
 make MODEL=nas540           # Target a different hardware model (nas540, nas520, nas326)
-make OMV=false              # Build minimal Debian 12 without OpenMediaVault
+make ENABLE_OMV=false       # Build minimal Debian 12 without OpenMediaVault
 make RUNTIME=docker         # Force Docker instead of Podman
 ```
 
 The generated disk image is saved under `images/`:
 ```
-images/debian-nas-bookworm-YY.DDD-armhf.img.gz
+images/debian-nas-bookworm-YY.DDD-armhf.img.zst
 ```
 
 ---
@@ -88,10 +96,10 @@ You can flash directly using the Makefile:
 make flash DISK=/dev/sdX
 ```
 
-Or manually with `dd`:
+Or manually with `dd` and `zstd`:
 ```bash
 # Decompress and flash (replace /dev/sdX with your actual USB drive)
-zcat images/debian-nas-bookworm-*.img.gz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
+zstd -dc images/debian-nas-bookworm-*.img.zst | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
 ```
 
 ---

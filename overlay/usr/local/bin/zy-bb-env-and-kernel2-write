@@ -1,0 +1,9 @@
+#!/bin/bash
+set -e
+
+modprobe ls1024a_nand 2>/dev/null || true
+sleep 1
+/bin/bash /usr/local/bin/zy-nand-get || true
+/bin/bash /usr/local/bin/zy-kernel2-write
+/bin/bash /usr/local/bin/zy-bb-env-write
+/bin/bash /usr/local/bin/zy-nand-write || true

@@ -1,0 +1,27 @@
+# ==============================================================================
+# Debian NAS Build Configuration
+# ==============================================================================
+# Target hardware model: nas542, nas540, nas520, nas326, nsa325, nsa320s, nsa310s
+MODEL="nas542"
+
+# OpenMediaVault 7 (true / false)
+ENABLE_OMV="true"
+
+# Hostname for the NAS
+HOSTNAME="debian-nas"
+
+# Primary network interface (dhcp or static)
+ETH0_MODE="dhcp"
+ETH0_IP="192.168.1.100"
+ETH0_NETMASK="255.255.255.0"
+GATEWAY="192.168.1.1"
+NAMESERVER="1.1.1.1"
+
+# Container runtime (auto, podman, docker)
+RUNTIME="auto"
+
+# Use sudo for container execution (auto, true, false)
+USE_SUDO="auto"
+
+# Fan speed policy: keep, low, mid, high
+FAN_SPEED="keep"

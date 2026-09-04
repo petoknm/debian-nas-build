@@ -1,0 +1,33 @@
+#!/bin/bash
+set -e
+
+modprobe ls1024a_nand 2>/dev/null || true
+
+# 1. Detect current boot slot (1 or 2)
+CURR_SLOT=1
+grep -q "curr_bootfrom=2" /proc/cmdline 2>/dev/null && CURR_SLOT=2
+
+# 2. Flash the alternate slot to preserve stock kernel
+if [ "$CURR_SLOT" = "2" ]; then
+    TARGET_SLOT=1
+    TARGET_NAME=kernel1
+    KRN_MTD=4
+else
+    TARGET_SLOT=2
+    TARGET_NAME=kernel2
+    KRN_MTD=6
+fi
+
+KRN_IMG=/boot/uImage
+if [ ! -f "$KRN_IMG" ]; then
+    for p in /newroot/boot/uImage /oldroot/boot/uImage /uImage; do
+        [ -f "$p" ] && KRN_IMG="$p" && break
+    done
+fi
+
+echo "Flashing $KRN_IMG to /dev/mtd$KRN_MTD ($TARGET_NAME)..."
+/sbin/flash_erase /dev/mtd$KRN_MTD 0 0
+/sbin/nandwrite -a -p /dev/mtd$KRN_MTD "$KRN_IMG"
+
+echo "Setting next_bootfrom=$TARGET_SLOT..."
+/firmware/sbin/info_setenv next_bootfrom $TARGET_SLOT || /sbin/fw_setenv next_bootfrom $TARGET_SLOT || true
