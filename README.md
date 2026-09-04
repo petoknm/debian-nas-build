@@ -29,7 +29,7 @@ You can build on any modern Linux distribution using **Podman** or **Docker** (r
 
 Required tools on the build host:
 - `podman` or `docker` (loop-device access needs `--privileged` and root/sudo privileges)
-- `curl` or `wget` (handled automatically by `build.sh` if needed)
+- `curl` or `wget` (handled automatically by `make` if needed)
 - Several GB of free disk space for Debian bootstrap, packages, and images
 - A USB flash drive (at least 4GB or 8GB recommended)
 
@@ -73,8 +73,6 @@ make MODEL=nas540           # Target a different hardware model (nas540, nas520,
 make OMV=false              # Build minimal Debian 12 without OpenMediaVault
 make RUNTIME=docker         # Force Docker instead of Podman
 ```
-
-*(You can also invoke [`./build.sh`](build.sh) directly for CLI-style flags: `./build.sh --help`)*
 
 The generated disk image is saved under `images/`:
 ```
