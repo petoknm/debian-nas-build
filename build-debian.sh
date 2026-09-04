@@ -944,6 +944,38 @@ apt-get install -y debootstrap gdisk qemu-user-static binfmt-support whiptail do
 
 if [ "${1:-}" = "batch" -o "${BATCH:-0}" = "1" ]; then
     echo " *** running in non-interactive batch mode using configuration ..."
+    if [ ! -e ${ltspBase}etc/${distBrandLower}-build.conf ] && [ ! -e ${ltspBase}${cpuArch}/etc/${distBrandLower}-build.conf ]; then
+        echo " *** generating default ${ltspBase}etc/${distBrandLower}-build.conf for batch mode (nas542, OMV 7) ..."
+        mkdir -p ${ltspBase}etc
+        cat > ${ltspBase}etc/${distBrandLower}-build.conf << 'EOFDEFCONF'
+boardModel=nas542
+FWGETURL="ftp://ftp.zyxel.com/NAS542/firmware/NAS542_V5.21(ABAG.0)C0.zip"
+FWUSEVER="newer"
+fanSpeed=keep
+firstUser=share
+imageMdMount=false
+imageOmv=true
+imageOmvInit=true
+imageHostname=debian-nas
+imageEth0Ip=dhcp
+imageEth0Mask=255.255.255.0
+imageEth1Ip=dhcp
+imageEth1Mask=255.255.255.0
+imageRouter=
+imageDNS=
+installRecommends=1
+installISCSITarget=0
+installMailServer=1
+installNFSServer=1
+installNTPServer=0
+installSMBServer=1
+installMiscServer=1
+installWifi=0
+installIpmitool=0
+installSmartctl=1
+EOFDEFCONF
+        . ${ltspBase}etc/${distBrandLower}-build.conf
+    fi
 else
 BMODEL=$(whiptail --default-item ${boardModel} --title "Image Creator Firmware Extraction" --cancel-button "Quit" --ok-button "Select" --menu "Which firmware would you like to download to get hardware tools?" 18 72 10 \
     "nsa310s" "Zyxel NSA310S" \
@@ -1833,6 +1865,14 @@ for z in `ls ${ltspBase}kernel/linux-tools-*-${cpuArch}.zip` ; do
   cd - > /dev/null
 done
 
+if [ -z "$(ls ${ltspBase}kernel/linux-image-*-${cpuArch}.zip 2>/dev/null)" ] && [[ "${boardModel:-}" =~ ^nas5 ]]; then
+  echo " *** kernel/linux-image-*-${cpuArch}.zip not found! Downloading default 6.12 NAS5xx kernel..."
+  mkdir -p ${ltspBase}kernel
+  DEFAULT_KRN_URL="https://github.com/scpcom/linux/releases/download/v6.12.95-7018-sbc/linux-image-6.12.95-20260823-nas5xx-armhf.zip"
+  wget -q --show-progress -O ${ltspBase}kernel/linux-image-6.12.95-20260823-nas5xx-armhf.zip "${DEFAULT_KRN_URL}" 2>/dev/null || \
+  curl -L -o ${ltspBase}kernel/linux-image-6.12.95-20260823-nas5xx-armhf.zip "${DEFAULT_KRN_URL}" || true
+fi
+
 for z in `ls ${ltspBase}kernel/linux-image-*-${cpuArch}.zip` ; do
   zd=`basename ${z}`
   zd=${zd/linux-image-/}
@@ -1912,6 +1952,13 @@ for f in ${ltspBase}archives/*debian-*-root*.tar.gz ; do
     tar xzvf $f
   fi
 done
+
+if [ -z "$(ls ${ltspBase}archives/*debian-*${distName}*-init-scripts*.tar.gz 2>/dev/null)" ]; then
+  if [ -e "${ltspBase}archives/debian-bullseye-init-scripts.tar.gz" ]; then
+    echo " *** creating archives/debian-${distName}-init-scripts.tar.gz from bullseye archive..."
+    ln -sf debian-bullseye-init-scripts.tar.gz "${ltspBase}archives/debian-${distName}-init-scripts.tar.gz"
+  fi
+fi
 
 for f in `ls ${ltspBase}archives/*debian-*${distName}*-init-scripts*.tar.gz` ; do
   tar xzvf $f
