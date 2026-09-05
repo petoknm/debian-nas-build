@@ -253,7 +253,7 @@ diskimage:
 	chroot $(R) apt-get clean 2>/dev/null || true
 	for i in $$(seq 0 7); do [ -e /dev/loop$$i ] || mknod /dev/loop$$i b 7 $$i 2>/dev/null || true; done
 	IMG="images/debian-nas-bookworm-$$(date +%y.%j)-armhf.img"
-	rm -f "$$IMG" "$${IMG}.zst" "$${IMG}.zstd"
+	rm -f "$$IMG" "$${IMG}.zst"
 	ROOT_M=$$(( $$(du -sk $(R) | cut -f1) / 1024 + 512 ))
 	dd if=/dev/zero of="$$IMG" bs=1M count=1 seek=$$(( 97 + ROOT_M + 32 )) status=none
 	sgdisk -o -n 1:2048:+95M -c 1:TC_BOOT -t 1:0700 -u 1:54cdf5da-deb1-b007-a694-32880502ef34 \
@@ -273,8 +273,7 @@ diskimage:
 	sync && umount mnt_tmp/boot mnt_tmp && rm -rf mnt_tmp
 	losetup -d "$$BDEV" "$$RDEV"
 	zstd -$(ZSTD_LEVEL) -f --rm "$$IMG"
-	ln -sf "$$(basename "$${IMG}.zst")" "$${IMG}.zstd"
-	chown -h $$(stat -c '%u:%g' images 2>/dev/null || echo 1000:1000) "$${IMG}.zst" "$${IMG}.zstd" 2>/dev/null || true
-	echo "Generated: $${IMG}.zst / $${IMG}.zstd ($$(ls -lh "$${IMG}.zst" | awk '{print $$5}'))"
+	chown $$(stat -c '%u:%g' images 2>/dev/null || echo 1000:1000) "$${IMG}.zst" 2>/dev/null || true
+	echo "Generated: $${IMG}.zst ($$(ls -lh "$${IMG}.zst" | awk '{print $$5}'))"
 
 endif
