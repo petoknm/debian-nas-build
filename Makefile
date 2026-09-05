@@ -122,10 +122,9 @@ armhf/bin/bash:
 	printf '127.0.0.1\tlocalhost\n::1\t\tlocalhost ip6-localhost ip6-loopback\nfe00::0\t\tip6-localnet\nff00::0\t\tip6-mcastprefix\nff02::1\t\tip6-allnodes\nff02::2\t\tip6-allrouters\n127.0.1.1\t$(HOSTNAME)\n' > $(R)/etc/hosts
 	printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > $(R)/etc/resolv.conf
 	printf 'devpts /dev/pts devpts gid=5,mode=620 0 0\ntmpfs /tmp tmpfs defaults 0 0\n' > $(R)/etc/fstab
-	mkdir -p $(R)/etc/network $(R)/etc/sysctl.d
+	mkdir -p $(R)/etc/network
 	printf 'auto lo\niface lo inet loopback\n\nauto eth0\nallow-hotplug eth0\niface eth0 inet dhcp\niface eth0 inet6 manual\n    pre-down ip -6 addr flush dev $$IFACE\n' > $(R)/etc/network/interfaces
 	echo "precedence ::ffff:0:0/96  100" >> $(R)/etc/gai.conf 2>/dev/null || true
-	printf 'net.ipv6.conf.all.disable_ipv6 = 1\nnet.ipv6.conf.default.disable_ipv6 = 1\nnet.ipv6.conf.lo.disable_ipv6 = 1\n' > $(R)/etc/sysctl.d/99-disable-ipv6.conf
 	printf "postfix postfix/main_mailer_type select No configuration\nproftpd-basic shared/proftpd/inetd_or_standalone select standalone\n" | chroot $(R) debconf-set-selections
 	printf '#!/bin/sh\nexit 101\n' > $(R)/usr/sbin/policy-rc.d && chmod +x $(R)/usr/sbin/policy-rc.d
 	mount -t proc proc $(R)/proc 2>/dev/null || true
