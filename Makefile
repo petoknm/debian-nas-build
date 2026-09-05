@@ -154,7 +154,7 @@ armhf/bin/bash:
 firmware: armhf/firmware/bin/buzzerc
 armhf/firmware/bin/buzzerc:
 	@echo "=== [Stage 2] Vendor Firmware Extraction ($(MODEL)) ==="
-	mkdir -p fw $(R)/firmware/bin $(R)/usr/local/bin $(R)/sbin
+	mkdir -p fw $(R)/firmware/bin $(R)/usr/local/bin $(R)/usr/lib/firmware
 	FW_FILE=fw/$$(basename "$(FW_URL)")
 	[ -n "$(FW_URL)" ] && [ ! -f "$$FW_FILE" ] && (curl -Ls -o "$$FW_FILE" "$(FW_URL)" || wget -qO "$$FW_FILE" "$(FW_URL)" || true)
 	if [ -f "$$FW_FILE" ]; then \
@@ -162,12 +162,22 @@ armhf/firmware/bin/buzzerc:
 	elif [ -f fw/ras.bin ]; then \
 		scripts/zy-fw-extract fw/ras.bin fw; \
 	fi
-	[ -f fw/newroot.tar.gz ] && tar -xzf fw/newroot.tar.gz -C $(R)/ 2>/dev/null || true
-	[ -f $(R)/sbin/buzzerc ] && cp -p $(R)/sbin/buzzerc $(R)/firmware/bin/ 2>/dev/null || true
-	[ -f $(R)/sbin/setLED ] && cp -p $(R)/sbin/setLED $(R)/usr/local/bin/ 2>/dev/null || true
-	[ -f $(R)/sbin/bareboxenv ] && cp -p $(R)/sbin/bareboxenv $(R)/usr/local/bin/ 2>/dev/null || true
-	[ -f $(R)/firmware/sbin/bareboxenv ] && cp -p $(R)/firmware/sbin/bareboxenv $(R)/usr/local/bin/ 2>/dev/null || true
-	[ -f $(R)/firmware/sbin/mmiotool ] && cp -p $(R)/firmware/sbin/mmiotool $(R)/usr/local/bin/ 2>/dev/null || true
+	if [ -f fw/newroot.tar.gz ]; then \
+		rm -rf fw/newroot_tmp; \
+		mkdir -p fw/newroot_tmp; \
+		tar -xzf fw/newroot.tar.gz -C fw/newroot_tmp; \
+		[ -d fw/newroot_tmp/sbin ] && cp -p fw/newroot_tmp/sbin/* $(R)/usr/local/bin/ 2>/dev/null || true; \
+		[ -d fw/newroot_tmp/sbin ] && cp -p fw/newroot_tmp/sbin/* $(R)/firmware/bin/ 2>/dev/null || true; \
+		[ -d fw/newroot_tmp/firmware ] && cp -a fw/newroot_tmp/firmware/* $(R)/firmware/ 2>/dev/null || true; \
+		[ -d fw/newroot_tmp/firmware/sbin ] && cp -p fw/newroot_tmp/firmware/sbin/* $(R)/usr/local/bin/ 2>/dev/null || true; \
+		[ -d fw/newroot_tmp/lib ] && cp -p fw/newroot_tmp/lib/libzy* $(R)/usr/lib/ 2>/dev/null || true; \
+		[ -d fw/newroot_tmp/lib ] && cp -p fw/newroot_tmp/lib/libzy* $(R)/usr/lib/arm-linux-gnueabihf/ 2>/dev/null || true; \
+		[ -d fw/newroot_tmp/lib/firmware ] && cp -a fw/newroot_tmp/lib/firmware/* $(R)/usr/lib/firmware/ 2>/dev/null || true; \
+		rm -rf fw/newroot_tmp; \
+	fi
+	[ -L $(R)/lib ] || (rm -rf $(R)/lib && ln -sf usr/lib $(R)/lib)
+	[ -L $(R)/sbin ] || (rm -rf $(R)/sbin && ln -sf usr/sbin $(R)/sbin)
+	[ -L $(R)/bin ] || (rm -rf $(R)/bin && ln -sf usr/bin $(R)/bin)
 
 omv:
 ifeq ($(ENABLE_OMV),true)
