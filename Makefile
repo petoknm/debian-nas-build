@@ -248,7 +248,7 @@ kernel:
 	[ -e $(BOOTDIR)/uImage ] && cp -p $(BOOTDIR)/uImage kernel/ 2>/dev/null || true
 	cp -a overlay/* $(R)/ 2>/dev/null || true
 	[ -d overlay/boot ] && cp -a overlay/boot/* $(BOOTDIR)/ 2>/dev/null || true
-	chmod +x $(R)/usr/local/bin/* $(R)/usr/local/sbin/* $(R)/debinit.sh $(R)/etc/init.d/* 2>/dev/null || true
+	chmod +x $(R)/usr/local/bin/* $(R)/usr/local/sbin/* $(R)/debinit.sh 2>/dev/null || true
 	chroot $(R) systemctl enable zy-ready zy-stop zy-fanctrl.timer 2>/dev/null || true
 
 image: diskimage

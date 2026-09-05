@@ -51,25 +51,7 @@ chown root:utmp       /run/screen
 
 cp -ap /newroot/run/resolvconf/. /run/resolvconf/
 
-if [ ! -e /sbin/halt.distrib ]; then
-  dpkg-divert --local --rename /sbin/halt
-fi
 
-if [ -e /sbin/halt.distrib ]; then
-  ln -sf /usr/local/bin/debhalt.sh /sbin/halt
-fi
-
-if [ ! -e /sbin/reboot.distrib ]; then
-  dpkg-divert --local --rename /sbin/reboot
-fi
-
-if [ -e /sbin/reboot.distrib ]; then
-  ln -sf /usr/local/bin/debreboot.sh /sbin/reboot
-fi
-
-if [ -e /bin/systemctl.distrib -a -e /bin/systemctl.druic ]; then
-  ln -sf /bin/systemctl.druic /bin/systemctl
-fi
 
 cp -p /newroot/debinit.sh /
 if [ -e /debinit.sh ]; then
