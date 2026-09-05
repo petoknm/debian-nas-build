@@ -145,6 +145,8 @@ armhf/bin/bash:
 	done
 	umount -l $(R)/dev/pts $(R)/sys $(R)/proc 2>/dev/null || true
 	rm -f $(R)/usr/sbin/policy-rc.d
+	chroot $(R) apt-get clean 2>/dev/null || true
+	rm -rf $(R)/tmp/* $(R)/var/tmp/*
 
 firmware: armhf/firmware/bin/buzzerc
 armhf/firmware/bin/buzzerc:
@@ -209,6 +211,9 @@ ifeq ($(ENABLE_OMV),true)
 	sed -i 's|OMV_MOUNT_DIR="/srv"|OMV_MOUNT_DIR="/media"|g' $(R)/etc/default/openmediavault 2>/dev/null || true
 	umount -l $(R)/dev/pts $(R)/sys $(R)/proc 2>/dev/null || true
 	rm -f $(R)/usr/sbin/policy-rc.d
+	chroot $(R) apt-get clean 2>/dev/null || true
+	rm -f $(R)/root/qemu_*.core 2>/dev/null || true
+	rm -rf $(R)/tmp/* $(R)/var/tmp/*
 	chroot $(R) dpkg -s openmediavault >/dev/null
 endif
 
@@ -243,6 +248,9 @@ diskimage:
 	@echo "=== [Stage 5] Generating Disk Image ==="
 	mkdir -p images mnt_tmp
 	chmod +x $(R)/usr/local/bin/zy-* $(R)/debinit.sh 2>/dev/null || true
+	rm -f $(R)/root/qemu_*.core 2>/dev/null || true
+	rm -rf $(R)/tmp/* $(R)/var/tmp/*
+	chroot $(R) apt-get clean 2>/dev/null || true
 	for i in $$(seq 0 7); do [ -e /dev/loop$$i ] || mknod /dev/loop$$i b 7 $$i 2>/dev/null || true; done
 	IMG="images/debian-nas-bookworm-$$(date +%y.%j)-armhf.img"
 	rm -f "$$IMG" "$${IMG}.zst" "$${IMG}.zstd"
