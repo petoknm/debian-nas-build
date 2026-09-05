@@ -23,12 +23,8 @@ NAMESERVER="${NAMESERVER:-1.1.1.1}"
 
 TUI_BIN="$(command -v whiptail 2>/dev/null || command -v dialog 2>/dev/null || true)"
 if [ -z "${TUI_BIN}" ]; then
-	CONTAINER="$(command -v docker 2>/dev/null || command -v podman 2>/dev/null || true)"
-	if [ -n "${CONTAINER}" ]; then
-		echo "Notice: whiptail not found on host, launching inside container..."
-		exec "${CONTAINER}" run --rm -it -v "${PWD}":/build -w /build debian-nas-builder ./menuconfig.sh
-	fi
-	echo "ERROR: Neither 'whiptail' nor 'dialog' was found on host."
+	echo "ERROR: Neither 'whiptail' nor 'dialog' was found on your host system."
+	echo "Please install whiptail (e.g., 'sudo apt install whiptail') or edit '.config' directly."
 	exit 1
 fi
 

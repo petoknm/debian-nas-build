@@ -20,7 +20,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gnupg \
     ca-certificates \
     python3-minimal \
-    whiptail \
     make \
     gzip \
     zstd \
