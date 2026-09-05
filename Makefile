@@ -280,16 +280,18 @@ diskimage:
 	          -n 2:0:+$${ROOT_M}M -c 2:TC_ROOT -t 2:8300 -u 2:54cdf5da-deb1-f007-a694-32880502ef34 "$$IMG" > /dev/null
 	BDEV=$$(losetup -o 1M --sizelimit 95M -f --show "$$IMG")
 	RDEV=$$(losetup -o 96M --sizelimit $${ROOT_M}M -f --show "$$IMG")
+	trap 'umount -l mnt_tmp/boot mnt_tmp 2>/dev/null || true; losetup -d "$$BDEV" "$$RDEV" 2>/dev/null || true; rm -rf mnt_tmp' EXIT
 	mkfs.vfat -n TC_BOOT -S 512 -s 16 "$$BDEV" > /dev/null
 	mkfs.ext4 -F -O ^metadata_csum -L TC_ROOT -m 0 "$$RDEV" > /dev/null
 	mount "$$RDEV" mnt_tmp && mkdir -p mnt_tmp/boot && mount -t vfat "$$BDEV" mnt_tmp/boot
 	find $(R)/usr/lib/linux-image-* -name "*.dtb" -exec cp -p {} $(BOOTDIR)/ \; 2>/dev/null || true
 	[ ! -e $(BOOTDIR)/uImage ] && (cp -p kernel/uImage $(BOOTDIR)/ 2>/dev/null || cp -p $(BOOTDIR)/vmlinuz-* $(BOOTDIR)/uImage 2>/dev/null || true)
-	rsync -aHAX --exclude='/boot/*' --exclude='/mnt_tmp' --exclude='/images' $(R)/ mnt_tmp/
+	rsync -aHAX --exclude='/boot' --exclude='/mnt_tmp' --exclude='/images' $(R)/ mnt_tmp/
 	rsync -rtLv --modify-window=1 $(BOOTDIR)/ mnt_tmp/boot/
 	grep -q "TC_ROOT" mnt_tmp/etc/fstab || echo 'LABEL=TC_ROOT / ext4 defaults,noatime 0 1' >> mnt_tmp/etc/fstab
 	grep -q "TC_BOOT" mnt_tmp/etc/fstab || echo 'LABEL=TC_BOOT /boot vfat defaults,noatime 0 0' >> mnt_tmp/etc/fstab
 	sync && umount mnt_tmp/boot mnt_tmp && rm -rf mnt_tmp
+	trap - EXIT
 	losetup -d "$$BDEV" "$$RDEV"
 	zstd -$(ZSTD_LEVEL) -f --rm "$$IMG"
 	chown $$(stat -c '%u:%g' images 2>/dev/null || echo 1000:1000) "$${IMG}.zst" 2>/dev/null || true
