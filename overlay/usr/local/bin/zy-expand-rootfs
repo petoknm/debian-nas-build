@@ -1,0 +1,106 @@
+#!/bin/bash
+set -e
+
+# ==============================================================================
+# zy-expand-rootfs: Expand USB root partition and ext4 filesystem to full disk
+# ==============================================================================
+
+LOGFILE="/boot/rootfs_expand.log"
+exec > >(tee -a "${LOGFILE}" 2>/dev/null) 2>&1
+
+echo "=== [$(date '+%Y-%m-%d %H:%M:%S')] Starting USB rootfs auto-expansion ==="
+
+# 1. Locate root block device
+ROOT_DEV=""
+if [ -n "$(blkid -L TC_ROOT 2>/dev/null)" ]; then
+  ROOT_DEV="$(blkid -L TC_ROOT 2>/dev/null)"
+fi
+if [ -z "${ROOT_DEV}" ]; then
+  ROOT_DEV="$(findmnt -n -o SOURCE /newroot 2>/dev/null || findmnt -n -o SOURCE / 2>/dev/null || true)"
+fi
+if [ -z "${ROOT_DEV}" ]; then
+  ROOT_DEV="$(awk '$2 == "/newroot" || $2 == "/" {print $1}' /proc/mounts 2>/dev/null | head -n1 || true)"
+fi
+if [ -z "${ROOT_DEV}" ]; then
+  BOOT_DEV="$(blkid -L TC_BOOT 2>/dev/null || true)"
+  [ -n "${BOOT_DEV}" ] && ROOT_DEV="${BOOT_DEV%1}2"
+fi
+
+if [ -z "${ROOT_DEV}" ] || [ ! -b "${ROOT_DEV}" ]; then
+  echo "ERROR: Could not identify root block device."
+  exit 1
+fi
+
+echo "Identified root device: ${ROOT_DEV}"
+
+# 2. Extract parent disk and partition number
+case "${ROOT_DEV}" in
+  /dev/sd[a-z][0-9]*)
+    DISK_DEV="${ROOT_DEV%[0-9]*}"
+    PART_NUM="${ROOT_DEV##*[a-z]}"
+    ;;
+  /dev/loop[0-9]*p[0-9]*|/dev/mmcblk[0-9]*p[0-9]*|/dev/nvme[0-9]*n[0-9]*p[0-9]*)
+    DISK_DEV="${ROOT_DEV%p[0-9]*}"
+    PART_NUM="${ROOT_DEV##*p}"
+    ;;
+  *)
+    echo "ERROR: Unrecognized block device pattern: ${ROOT_DEV}"
+    exit 1
+    ;;
+esac
+
+if [ ! -b "${DISK_DEV}" ]; then
+  echo "ERROR: Parent disk device ${DISK_DEV} not found."
+  exit 1
+fi
+
+echo "Parent disk: ${DISK_DEV}, Partition number: ${PART_NUM}"
+
+# 3. Relocate secondary/backup GPT header to the physical end of disk
+echo "Relocating backup GPT header to end of disk..."
+if which sgdisk >/dev/null 2>&1; then
+  sgdisk -e "${DISK_DEV}" >/dev/null 2>&1 || true
+fi
+
+# 4. Expand partition entry in GPT table
+echo "Expanding partition ${PART_NUM} to 100% in GPT..."
+PART_UUID="54cdf5da-deb1-f007-a694-32880502ef34"
+if which sgdisk >/dev/null 2>&1; then
+  # Recreate partition entry starting at same offset spanning to end of disk
+  sgdisk -d "${PART_NUM}" \
+         -n "${PART_NUM}:0:0" \
+         -c "${PART_NUM}:TC_ROOT" \
+         -t "${PART_NUM}:8300" \
+         -u "${PART_NUM}:${PART_UUID}" \
+         "${DISK_DEV}" >/dev/null 2>&1 || true
+elif which parted >/dev/null 2>&1; then
+  parted -s "${DISK_DEV}" resizepart "${PART_NUM}" 100% >/dev/null 2>&1 || true
+fi
+
+# 5. Inform kernel of new partition boundary
+echo "Informing kernel of new partition boundary..."
+NEW_SECTORS=""
+if which sgdisk >/dev/null 2>&1; then
+  NEW_SECTORS="$(sgdisk -i "${PART_NUM}" "${DISK_DEV}" 2>/dev/null | grep -i "Partition size:" | awk '{print $3}' || true)"
+fi
+
+if [ -n "${NEW_SECTORS}" ] && which resizepart >/dev/null 2>&1; then
+  resizepart "${DISK_DEV}" "${PART_NUM}" "${NEW_SECTORS}" >/dev/null 2>&1 || true
+fi
+
+which partx >/dev/null 2>&1 && partx -u "${DISK_DEV}" >/dev/null 2>&1 || true
+which partprobe >/dev/null 2>&1 && partprobe "${DISK_DEV}" >/dev/null 2>&1 || true
+
+# 6. Resize ext4 filesystem online
+echo "Resizing ext4 filesystem on ${ROOT_DEV}..."
+if which resize2fs >/dev/null 2>&1; then
+  resize2fs "${ROOT_DEV}" || true
+fi
+
+# Mark expansion completed
+if [ -d /boot ]; then
+  touch /boot/.rootfs_expanded
+fi
+
+echo "=== USB rootfs auto-expansion completed successfully ==="
+echo "Filesystem status: $(df -h "${ROOT_DEV}" 2>/dev/null | awk 'NR==2 {print $2 " total, " $4 " free (" $5 " used)"}')"

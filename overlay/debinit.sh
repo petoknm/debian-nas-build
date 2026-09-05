@@ -29,6 +29,17 @@ if [ ! -e /boot/uImage ]; then
   fi
 fi
 
+# AUTO-EXPAND ROOTFS: Expand USB partition 2 and ext4 filesystem to fill physical USB drive
+if [ ! -f /boot/.rootfs_expanded ]; then
+  chmod ugo+rx /usr/local/bin/zy-* 2>/dev/null || true
+  if [ -x /usr/local/bin/zy-expand-rootfs ]; then
+    echo "=========================================================="
+    echo "=== Auto-expanding USB root filesystem to fill drive... ==="
+    echo "=========================================================="
+    /bin/bash /usr/local/bin/zy-expand-rootfs || true
+  fi
+fi
+
 # AUTO-FLASH KERNEL 6.12: If booted under stock 3.2 kernel and not yet flashed
 if uname -r 2>/dev/null | grep -q "^3\.2"; then
   if [ ! -f /boot/.kernel2_flashed ]; then
