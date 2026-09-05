@@ -100,7 +100,7 @@ fi
 #fi
 
 if [ -e "${ROM_FILE}" -a ! -e ${FWOUTPATH}/sysdisk.img.gz ]; then
-  python ${SCRIPTDIR}/zy-fw-unpack.py "${ROM_FILE}" ${FWOUTPATH}
+  python3 ${SCRIPTDIR}/zy-fw-unpack.py "${ROM_FILE}" ${FWOUTPATH}
 fi
 
 if [ -e ${FWOUTPATH}/DATA_0101 ]; then
@@ -147,39 +147,41 @@ fi
 
 if [ -e ${FWOUTPATH}/vmlinuz_unpacked/initramfs/etc/profile ]; then
   cd "${FWOUTPATH}/vmlinuz_unpacked/initramfs/"
-  sudo tar czf ../../initramfs.tar.gz .
-  sudo chmod ugo+rw ../../initramfs.tar.gz
+  tar czf ../../initramfs.tar.gz .
+  chmod ugo+rw ../../initramfs.tar.gz
   cd - > /dev/null
 
-  sudo ${SCRIPTDIR}/zy-fw-get-bin "${FWOUTPATH}/vmlinuz_unpacked/initramfs"
+  ${SCRIPTDIR}/zy-fw-get-bin "${FWOUTPATH}/vmlinuz_unpacked/initramfs"
 
   cd "${FWOUTPATH}/vmlinuz_unpacked/initramfs/lib/"
   for l in ld-* libc.* libc-* libm.* libm-* ; do
     if [ -e "${FWOUTPATH}/vmlinuz_unpacked/initramfs/newroot/lib/${l}" ]; then
-      sudo rm "${FWOUTPATH}/vmlinuz_unpacked/initramfs/newroot/lib/${l}"
+      rm "${FWOUTPATH}/vmlinuz_unpacked/initramfs/newroot/lib/${l}"
     fi
   done
   cd -
 
   cd "${FWOUTPATH}/vmlinuz_unpacked/initramfs/newroot"
-  sudo tar czf ../../../newroot.tar.gz .
-  sudo chmod ugo+rw ../../../newroot.tar.gz
+  tar czf ../../../newroot.tar.gz .
+  chmod ugo+rw ../../../newroot.tar.gz
   cd - > /dev/null
 
   cp -p ${FWOUTPATH}/vmlinuz_unpacked/initramfs/etc/modelname ${FWOUTPATH}/
 
-  sudo rm -rf ${FWOUTPATH}/vmlinuz_unpacked/initramfs/newroot/
-  sudo rm -rf ${FWOUTPATH}/vmlinuz_unpacked/initramfs/
+  rm -rf ${FWOUTPATH}/vmlinuz_unpacked/initramfs/newroot/
+  rm -rf ${FWOUTPATH}/vmlinuz_unpacked/initramfs/
 fi
 
 if [ -e ${FWOUTPATH}/sysdisk.img ]; then
   mkdir -p "${FWOUTPATH}/mount"
-  sudo mount -o loop,ro "${FWOUTPATH}/sysdisk.img" "${FWOUTPATH}/mount"
-  cd "${FWOUTPATH}/mount"
-  sudo tar czf ../modules.tar.gz lib/modules
-  sudo chmod ugo+rw ../modules.tar.gz
-  cd - > /dev/null
-  sudo umount "${FWOUTPATH}/mount"
+  mount -o loop,ro "${FWOUTPATH}/sysdisk.img" "${FWOUTPATH}/mount" 2>/dev/null || true
+  if [ -d "${FWOUTPATH}/mount/lib/modules" ]; then
+    cd "${FWOUTPATH}/mount"
+    tar czf ../modules.tar.gz lib/modules
+    chmod ugo+rw ../modules.tar.gz
+    cd - > /dev/null
+    umount "${FWOUTPATH}/mount" 2>/dev/null || true
+  fi
 fi
 
 show_fw_info
