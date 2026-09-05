@@ -1,0 +1,13 @@
+#  systemd timer unit to control system fan speed for NAS54x
+#
+#
+
+[Unit]
+Description=Adjust NAS54x fan speed acc. to cpu temperature
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+
+[Install]
+WantedBy=timers.target

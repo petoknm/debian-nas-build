@@ -1,0 +1,9 @@
+#!/bin/sh
+
+/sbin/setLED SYS GREEN BLINK
+
+# clear the AF flag of rtc
+/sbin/rtcAccess clearAF
+
+rm -f /tmp/.dru-boot.done
+

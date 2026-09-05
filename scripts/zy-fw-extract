@@ -62,10 +62,17 @@ cd "${FWOUTPATH}" ; FWOUTPATH=`pwd` ; cd - > /dev/null
 
 if [ ! -e "${ROM_FILE}" ]; then
   cd ${FWOUTPATH}/
-  wget -N "${FWGETURL}"
-  unzip *.zip *.bin
+  if [ -n "${FWGETURL}" ]; then
+    wget -N "${FWGETURL}" || curl -Ls -O "${FWGETURL}" || true
+  fi
+  unzip -qo *.zip *.bin 2>/dev/null || true
   cd - > /dev/null
-  mv "${FWOUTPATH}/"*.bin "${ROM_FILE}"
+  for b in "${FWOUTPATH}"/*.bin ; do
+    if [ -f "$b" ] && [ "$b" != "${ROM_FILE}" ]; then
+      mv "$b" "${ROM_FILE}"
+      break
+    fi
+  done
 fi
 
 # Unpacked file is at ${FWOUTPATH}.

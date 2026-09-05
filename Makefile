@@ -23,10 +23,10 @@ HOSTNAME     := $(strip $(subst ",,$(HOSTNAME)))
 KERNEL_VER   ?= 6.12.95-20260823
 KERNEL_ZIP   := linux-image-$(KERNEL_VER)-nas5xx-armhf.zip
 KERNEL_URL   := https://github.com/scpcom/linux/releases/download/v6.12.95-7018-sbc/$(KERNEL_ZIP)
-FW_URL_nas542 := ftp://ftp.zyxel.com/NAS542/firmware/NAS542_V5.21(ABAG.0)C0.zip
-FW_URL_nas540 := ftp://ftp.zyxel.com/NAS540/firmware/NAS540_V5.21(AATB.0)C0.zip
-FW_URL_nas520 := ftp://ftp.zyxel.com/NAS520/firmware/NAS520_V5.21(AASZ.0)C0.zip
-FW_URL_nas326 := ftp://ftp.zyxel.com/NAS326/firmware/NAS326_V5.21(AAZF.0)C0.zip
+FW_URL_nas542 := https://zyxel.ddnss.eu/Users/Mijzelf/Firmware/NAS542/521ABAG10C0.bin
+FW_URL_nas540 := https://zyxel.ddnss.eu/Users/Mijzelf/Firmware/NAS540/521AATB10C0.bin
+FW_URL_nas520 := https://zyxel.ddnss.eu/Users/Mijzelf/Firmware/NAS520_V5.21(AASZ.5)C0.zip
+FW_URL_nas326 := https://zyxel.ddnss.eu/Users/Mijzelf/Firmware/NAS326/521AAZF13C0.bin
 FW_URL        := $(FW_URL_$(MODEL))
 
 # Container Runtime
@@ -44,14 +44,11 @@ ifeq ($(IN_CONTAINER),0)
 .config: .config.default
 	@cp $< $@
 
-archives/debian-bookworm-init-scripts.tar.gz: archives/debian-bullseye-init-scripts.tar.gz
-	@mkdir -p archives && ln -sf debian-bullseye-init-scripts.tar.gz $@
-
 kernel/$(KERNEL_ZIP):
 	@mkdir -p kernel
 	curl -Ls -o $@ $(KERNEL_URL) || wget -qO $@ $(KERNEL_URL)
 
-prep: .config archives/debian-bookworm-init-scripts.tar.gz kernel/$(KERNEL_ZIP)
+prep: .config kernel/$(KERNEL_ZIP)
 
 builder-image:
 	@if [ -n "$(FORCE)" ] || ! $(CONTAINER) image inspect $(BUILDER_IMG) >/dev/null 2>&1; then
@@ -157,15 +154,20 @@ armhf/bin/bash:
 firmware: armhf/firmware/bin/buzzerc
 armhf/firmware/bin/buzzerc:
 	@echo "=== [Stage 2] Vendor Firmware Extraction ($(MODEL)) ==="
-	mkdir -p fw $(R)/firmware/bin $(R)/usr/local/bin
+	mkdir -p fw $(R)/firmware/bin $(R)/usr/local/bin $(R)/sbin
 	FW_FILE=fw/$$(basename "$(FW_URL)")
-	[ -n "$(FW_URL)" ] && [ ! -f "$$FW_FILE" ] && curl -Ls -o "$$FW_FILE" "$(FW_URL)" || true
-	[ -f "$$FW_FILE" ] && unzip -qo "$$FW_FILE" -d fw/unpack 2>/dev/null || true
-	for t in buzzerc info_printenv info_setenv bareboxenv flash_erase nandwrite; do
-		f=$$(find fw/ -name "$$t" 2>/dev/null | head -n1 || true)
-		[ -n "$$f" ] && cp -p "$$f" $(R)/firmware/bin/ && cp -p "$$f" $(R)/usr/local/bin/ || true
-	done
-	rm -rf fw/unpack
+	[ -n "$(FW_URL)" ] && [ ! -f "$$FW_FILE" ] && (curl -Ls -o "$$FW_FILE" "$(FW_URL)" || wget -qO "$$FW_FILE" "$(FW_URL)" || true)
+	if [ -f "$$FW_FILE" ]; then \
+		scripts/zy-fw-extract - fw "$$FW_FILE"; \
+	elif [ -f fw/ras.bin ]; then \
+		scripts/zy-fw-extract fw/ras.bin fw; \
+	fi
+	[ -f fw/newroot.tar.gz ] && tar -xzf fw/newroot.tar.gz -C $(R)/ 2>/dev/null || true
+	[ -f $(R)/sbin/buzzerc ] && cp -p $(R)/sbin/buzzerc $(R)/firmware/bin/ 2>/dev/null || true
+	[ -f $(R)/sbin/setLED ] && cp -p $(R)/sbin/setLED $(R)/usr/local/bin/ 2>/dev/null || true
+	[ -f $(R)/sbin/bareboxenv ] && cp -p $(R)/sbin/bareboxenv $(R)/usr/local/bin/ 2>/dev/null || true
+	[ -f $(R)/firmware/sbin/bareboxenv ] && cp -p $(R)/firmware/sbin/bareboxenv $(R)/usr/local/bin/ 2>/dev/null || true
+	[ -f $(R)/firmware/sbin/mmiotool ] && cp -p $(R)/firmware/sbin/mmiotool $(R)/usr/local/bin/ 2>/dev/null || true
 
 omv:
 ifeq ($(ENABLE_OMV),true)
@@ -241,20 +243,13 @@ kernel:
 		chroot $(R) sh -c "dpkg -i --force-depends $$REL/*.deb 2>/dev/null || true"; \
 		rm -rf "$$TMP"; \
 	fi
-	for z in archives/linux-bsp-*.zip; do \
-		[ -f "$$z" ] || continue; \
-		TMP=$$(mktemp -d $(R)/tmp/bsp.XXXX); \
-		REL="/tmp/$$(basename $$TMP)"; \
-		unzip -qo "$$z" -d "$$TMP"; \
-		chroot $(R) sh -c "dpkg -i --force-depends $$REL/*.deb 2>/dev/null || true"; \
-		rm -rf "$$TMP"; \
-	done
-	for f in archives/*-init-scripts*.tar.gz; do [ -f "$$f" ] && tar xzf "$$f" -C $(R)/ 2>/dev/null || true; done
 	find $(R)/usr/lib/linux-image-* -name "*.dtb" -exec cp -p {} $(BOOTDIR)/ \; 2>/dev/null || true
 	[ ! -e $(BOOTDIR)/uImage ] && cp -p $(BOOTDIR)/vmlinuz-* $(BOOTDIR)/uImage 2>/dev/null || true
 	[ -e $(BOOTDIR)/uImage ] && cp -p $(BOOTDIR)/uImage kernel/ 2>/dev/null || true
 	cp -a overlay/* $(R)/ 2>/dev/null || true
-	chmod +x $(R)/usr/local/bin/* $(R)/debinit.sh 2>/dev/null || true
+	[ -d overlay/boot ] && cp -a overlay/boot/* $(BOOTDIR)/ 2>/dev/null || true
+	chmod +x $(R)/usr/local/bin/* $(R)/usr/local/sbin/* $(R)/debinit.sh $(R)/etc/init.d/* 2>/dev/null || true
+	chroot $(R) systemctl enable zy-ready zy-stop zy-fanctrl.timer 2>/dev/null || true
 
 image: diskimage
 diskimage:
@@ -276,7 +271,6 @@ diskimage:
 	mkfs.vfat -n TC_BOOT -S 512 -s 16 "$$BDEV" > /dev/null
 	mkfs.ext4 -F -O ^metadata_csum -L TC_ROOT -m 0 "$$RDEV" > /dev/null
 	mount "$$RDEV" mnt_tmp && mkdir -p mnt_tmp/boot && mount -t vfat "$$BDEV" mnt_tmp/boot
-	[ -d archives ] && for f in archives/*-boot*.tar.gz; do [ -e "$$f" ] && tar xzf "$$f" -C $(BOOTDIR) 2>/dev/null; done || true
 	find $(R)/usr/lib/linux-image-* -name "*.dtb" -exec cp -p {} $(BOOTDIR)/ \; 2>/dev/null || true
 	[ ! -e $(BOOTDIR)/uImage ] && (cp -p kernel/uImage $(BOOTDIR)/ 2>/dev/null || cp -p $(BOOTDIR)/vmlinuz-* $(BOOTDIR)/uImage 2>/dev/null || true)
 	rsync -aHAX --exclude='/boot/*' --exclude='/mnt_tmp' --exclude='/images' $(R)/ mnt_tmp/

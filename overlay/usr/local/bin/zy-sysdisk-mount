@@ -1,0 +1,31 @@
+#!/bin/sh
+
+. /etc/zy-profile
+
+if [ ! -e ${NAND_PATH}/sysdisk.img.gz ]; then
+	/usr/local/bin/zy-nand-mount
+fi
+
+/bin/storage_asm_mntfw_swap.sh ${DISK_PATH}
+Flag_HD_Exists=$?
+
+echo ${Flag_HD_Exists}
+if [ "$Flag_HD_Exists" = "0" ]; then
+	if [ -f ${DISK_PATH}/sysdisk.img ]; then
+		true
+	else
+		echo "System disk image does NOT exist on HDD! Extract new firmware from NAND flash ..."
+		gzip -cd ${NAND_PATH}/sysdisk.img.gz > ${DISK_PATH}/sysdisk.img
+		sync
+	fi
+fi
+
+# Mount System Disk image for copying files from it.
+if [ -f ${DISK_PATH}/sysdisk.img ]; then
+	echo -e "\033[033mMount system disk image ...\033[0m"
+	${MKDIR} -p ${IMG_PATH}
+	${MOUNT} -t ext2 -o loop,ro ${DISK_PATH}/sysdisk.img ${IMG_PATH}
+
+	cp -ap ${IMG_PATH}/lib/modules/. /lib/modules/
+fi
+

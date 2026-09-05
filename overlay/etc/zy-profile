@@ -1,0 +1,64 @@
+#!/bin/sh
+
+SETTING_PATH="/etc/settings"
+if [ -f ${SETTING_PATH}/firmware_info_path ]; then
+    BASE_PATH="`cat ${SETTING_PATH}/firmware_info_path`"
+else
+    BASE_PATH="/firmware"
+fi
+
+PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:${BASE_PATH}/sbin:/usr/local/zy-pkgs/bin:${BASE_PATH}/htp
+export PATH
+
+LD_LIBRARY_PATH=/lib:/usr/lib:/usr/lib/private
+export LD_LIBRARY_PATH
+
+
+# settings
+ECHO="/bin/echo"
+CAT="/bin/cat"
+RM="/bin/rm"
+MOUNT="/bin/mount"
+UMOUNT="/bin/umount"
+IP="/bin/ip"
+IFCONFIG="/sbin/ifconfig"
+SED="/bin/sed"
+MKDIR="/bin/mkdir"
+RMDIR="/bin/rmdir"
+AWK="/bin/awk"
+MD5SUM="/sbin/md5sum"
+REBOOT="/sbin/reboot"
+BUZZERC="/sbin/buzzerc"
+LN="/bin/ln"
+INSMOD="/sbin/insmod"
+RMMOD="/sbin/rmmod"
+LSMOD="/sbin/lsmod"
+DEPMOD="/sbin/depmod"
+
+
+NAND_PATH="${BASE_PATH}/mnt/nand"
+DISK_PATH="${BASE_PATH}/mnt/sysdisk"
+INFO_PATH="${BASE_PATH}/mnt/info"
+HTP_PATH="${BASE_PATH}/htp"
+IMG_PATH="/ram_bin"
+USB_PATH="/mnt/partnerkey"
+
+if [ -f ${SETTING_PATH}/config_on_nand_path ]; then
+    CONF_PATH="`cat ${SETTING_PATH}/config_on_nand_path`"
+else
+    CONF_PATH="/etc/zyxel"
+fi
+
+CONFIG_MTD_NUM="3"
+CONFIG_MTD="/dev/mtd${CONFIG_MTD_NUM}"
+CONFIG_MTD_BLOCK="/dev/mtdblock${CONFIG_MTD_NUM}"
+
+GET_MAC_MCU="/sbin/get_mac_mcu.sh"
+WRITE_MAC_MCU="/sbin/write_mac_mcu.sh"
+INFO_PRINTENV="${BASE_PATH}/sbin/info_printenv"
+INFO_SETENV="${BASE_PATH}/sbin/info_setenv"
+MRD_MAC="${BASE_PATH}/sbin/mrd_mac"
+MRD_MODEL="${BASE_PATH}/sbin/mrd_model"
+
+NAND_FS_TYPE="ubifs"    # ubifs/yaffs2
+

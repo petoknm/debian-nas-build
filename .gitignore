@@ -1,6 +1,6 @@
-armhf/
-etc/
-fw/
-images/
-kernel/
-.config
+/armhf/
+/etc/
+/fw/
+/images/
+/kernel/
+/.config

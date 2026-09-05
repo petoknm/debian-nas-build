@@ -1,0 +1,14 @@
+#!/bin/sh
+
+. /usr/local/etc/zy-nand-profile
+
+mkdir -p ${NAND_PATH}
+
+ubiattach -m ${IMG_MTD} -d ${IMG_MTD}
+mount -t ${NAND_FS_TYPE} -o ro ubi${IMG_MTD}:ubi_rootfs${CURR_BOOTFROM} ${NAND_PATH}
+
+mkdir -p ${CNFG_PATH}
+
+ubiattach -m ${CNF_MTD} -d ${CNF_MTD}
+mount -t ${CNFG_FS_TYPE} -o ro ${CNFG_FS_NAME} ${CNFG_PATH}
+

@@ -1,0 +1,22 @@
+#!/bin/sh
+
+setLEDs() {
+  echo setLED * $1 $2 
+  setLED COPY OFF && sleep 1 && setLED COPY $1 $2
+  setLED SYS  OFF && sleep 1 && setLED SYS  $1 $2
+  setLED HDD1 OFF && sleep 1 && setLED HDD1 $1 $2
+  setLED HDD2 OFF && sleep 1 && setLED HDD2 $1 $2
+  setLED HDD3 OFF && sleep 1 && setLED HDD3 $1 $2
+  setLED HDD4 OFF && sleep 1 && setLED HDD4 $1 $2
+  sleep 4
+}
+
+setLEDs GREEN ON
+setLEDs ORANGE ON
+setLEDs RED ON
+setLEDs RED BLINK
+setLEDs ORANGE BLINK
+setLEDs GREEN BLINK
+
+setLEDs OFF
+

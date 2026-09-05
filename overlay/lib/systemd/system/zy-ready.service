@@ -1,0 +1,16 @@
+[Unit]
+Description=NAS system start
+DefaultDependencies=no
+#After=multi-user.target
+#After=network.target
+After=getty.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/zy-ready
+TimeoutSec=0
+RemainAfterExit=yes
+SysVStartPriority=99
+
+[Install]
+WantedBy=multi-user.target

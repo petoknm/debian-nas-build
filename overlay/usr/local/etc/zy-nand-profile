@@ -1,0 +1,33 @@
+#!/bin/sh
+
+. /etc/zy-profile
+
+ENV_MTD=2
+CNF_MTD=3
+CNFG_PATH=/firmware/mnt/cnfg
+CNFG_FS_TYPE="ubifs"
+#CNFG_FS_NAME=ubi${CNF_MTD}:ubi_rootfs${CURR_BOOTFROM}
+CNFG_FS_NAME=ubi${CNF_MTD}:ubi_config
+
+# which kernel and system image partitions
+CURR_BOOTFROM_UPDATED="0"
+NEXT_BOOTFROM=`${INFO_PRINTENV} next_bootfrom | awk -F"=" '{print $2}'`
+CURR_BOOTFROM=`${INFO_PRINTENV} curr_bootfrom | awk -F"=" '{print $2}'`
+if [ "${NEXT_BOOTFROM}" != "${CURR_BOOTFROM}" ]; then
+    CURR_BOOTFROM="${NEXT_BOOTFROM}"
+#   ${INFO_SETENV} curr_bootfrom "${CURR_BOOTFROM}"
+        CURR_BOOTFROM_UPDATED="1"
+fi
+#CURR_BOOTFROM=`${INFO_PRINTENV} curr_bootfrom | awk -F"=" '{print $2}'`
+if [ "x${CURR_BOOTFROM}" = "x" ]; then
+        CURR_BOOTFROM=1
+fi
+if [ "${CURR_BOOTFROM}" = "1" ]; then
+        IMG_MTD=5
+else
+        IMG_MTD=7
+fi
+#IMG_MTD=`${INFO_PRINTENV} sysimg_mtd_${CURR_BOOTFROM} | awk -F"=" '{print $2}'`
+#IMG_MTD=`${INFO_PRINTENV} rootfs_mtdblock_nand | awk -F"=" '{print $2}'`
+KRN_MTD=`expr ${IMG_MTD} - 1`
+

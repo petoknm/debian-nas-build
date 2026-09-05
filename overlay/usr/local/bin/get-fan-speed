@@ -1,0 +1,8 @@
+#!/bin/sh
+rawspeed=$((`sudo i2cget -y 0x0 0x0a 0x08`))
+
+if [ "$rawspeed" = "0" ] ; then
+    echo "Fan stopped"
+else
+    echo "Fan: $((60000/$rawspeed)) rpm"
+fi

@@ -1,0 +1,10 @@
+#  systemd service file for controlling system fan speed for NAS54x
+#  the script to control fan speed must bi installed in /usl/local/sbin
+#
+
+[Unit]
+Description=Adjust NAS54x fan speed acc. to cpu temperature
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/fanctrl.sh auto

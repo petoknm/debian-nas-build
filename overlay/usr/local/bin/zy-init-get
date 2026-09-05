@@ -1,0 +1,39 @@
+#!/bin/sh
+SCRIPTDIR=/usr/local/bin
+FWOUTPATH=~/fw
+
+if [ -e /boot/uImage -a ! -e ${FWOUTPATH}/uImage ]; then
+  mkdir -p ${FWOUTPATH}
+  cp -p /boot/uImage ${FWOUTPATH}/
+fi
+
+if [ -e ${FWOUTPATH}/uImage -a ! -e ${FWOUTPATH}/vmlinuz_unpacked ]; then
+  cd "${FWOUTPATH}/"
+  if file uImage | grep 'u-boot legacy uImage' ; then
+    tail -c+65 < uImage > vmlinuz
+  else
+    cp -p uImage vmlinuz
+  fi
+  ${SCRIPTDIR}/repack-zImage.sh -u vmlinuz
+  cd - > /dev/null
+fi
+
+if [ -e ${FWOUTPATH}/vmlinuz_unpacked/initramfs/etc/profile ]; then
+  cd "${FWOUTPATH}/vmlinuz_unpacked/initramfs/"
+  tar czf ../../initramfs.tar.gz .
+  chmod ugo+rw ../../initramfs.tar.gz
+  cd - > /dev/null
+
+  ${SCRIPTDIR}/zy-fw-get-bin "${FWOUTPATH}/vmlinuz_unpacked/initramfs"
+  cd "${FWOUTPATH}/vmlinuz_unpacked/initramfs/newroot"
+  tar czf ../../../newroot.tar.gz .
+  chmod ugo+rw ../../../newroot.tar.gz
+  cd - > /dev/null
+
+  rm -rf ${FWOUTPATH}/vmlinuz_unpacked/initramfs/
+
+  cd /
+  tar --keep-directory-symlink -xzf ${FWOUTPATH}/newroot.tar.gz ./etc ./firmware ./lib ./oldroot ./sbin ./usr ./zy-init
+  cd - > /dev/null
+fi
+

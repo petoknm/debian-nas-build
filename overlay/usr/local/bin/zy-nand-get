@@ -1,0 +1,39 @@
+#!/bin/sh
+
+. /usr/local/etc/zy-nand-profile
+
+BOOT_PATH=/boot
+
+modprobe ls1024a_nand
+
+/usr/local/bin/zy-fw-get-info
+
+if [ -e /firmware/sbin/bareboxenv ]; then
+  mkdir -p ${BOOT_PATH}/barebox
+
+  if [ ! -e ${BOOT_PATH}/bb.env ]; then
+    cat /dev/mtd${ENV_MTD} > ${BOOT_PATH}/bb.env
+  fi
+
+  if [ ! -e /boot/barebox/config ]; then
+    /firmware/sbin/bareboxenv -l ${BOOT_PATH}/barebox ${BOOT_PATH}/bb.env
+  fi
+fi
+
+if [ ! -e ${BOOT_PATH}/uImage ]; then
+  cat /dev/mtd${KRN_MTD} > ${BOOT_PATH}/uImage
+
+  if file ${BOOT_PATH}/uImage | grep 'u-boot legacy uImage' ; then
+    b=`file ${BOOT_PATH}/uImage | cut -d "," -f 5`
+    #b=${b/ /}
+    b=`echo "${b}" | sed s/'^ '/''/g`
+    a=`echo "${b}" | cut -d " " -f 1`
+    b=`echo "${b}" | cut -d " " -f 2`
+    if [ x${b} = xbytes ]; then
+      mv ${BOOT_PATH}/uImage ${BOOT_PATH}/mtd-uImage
+      c=`expr ${a} + 64`
+      dd if=${BOOT_PATH}/mtd-uImage of=${BOOT_PATH}/uImage bs=${c} count=1
+    fi
+  fi
+fi
+

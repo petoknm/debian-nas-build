@@ -1,0 +1,58 @@
+#!/bin/sh
+. /usr/local/etc/zy-nand-profile
+
+if [ ! -e ${BASE_PATH}/sbin/info_printenv ]; then
+	exit 1
+fi
+
+# Write some info to ${INFO_PATH}
+FWVERSION=`${BASE_PATH}/sbin/info_printenv fwversion_${CURR_BOOTFROM} 2>/dev/null | awk -F"=" '{print $2}'`
+REVISION=`${BASE_PATH}/sbin/info_printenv revision_${CURR_BOOTFROM} 2>/dev/null | awk -F"=" '{print $2}'`
+MODELID=`${BASE_PATH}/sbin/info_printenv modelid_${CURR_BOOTFROM} 2>/dev/null | awk -F"=" '{print $2}'`
+CORE_CHECKSUM=`${BASE_PATH}/sbin/info_printenv core_checksum_${CURR_BOOTFROM} 2>/dev/null | awk -F"=" '{print $2}'`
+ZLD_CHECKSUM=`${BASE_PATH}/sbin/info_printenv zld_checksum_${CURR_BOOTFROM} 2>/dev/null | awk -F"=" '{print $2}'`
+ROMFILE_CHECKSUM=`${BASE_PATH}/sbin/info_printenv romfile_checksum_${CURR_BOOTFROM} 2>/dev/null | awk -F"=" '{print $2}'`
+IMG_CHECKSUM=`${BASE_PATH}/sbin/info_printenv img_checksum_${CURR_BOOTFROM} 2>/dev/null | awk -F"=" '{print $2}'`
+
+if [ ! -d ${INFO_PATH} ]; then
+	${MKDIR} -p ${INFO_PATH}
+fi
+
+echo ${FWVERSION} > ${INFO_PATH}/fwversion
+echo ${REVISION} > ${INFO_PATH}/revision
+echo ${MODELID} > ${INFO_PATH}/modelid
+echo ${CORE_CHECKSUM} > ${INFO_PATH}/core_checksum
+echo ${ZLD_CHECKSUM} > ${INFO_PATH}/zld_checksum
+echo ${ROMFILE_CHECKSUM} > ${INFO_PATH}/romfile_checksum
+echo ${IMG_CHECKSUM} > ${INFO_PATH}/img_checksum
+
+MODEL_ID=${MODELID}
+
+if [ "${MODEL_ID}" = "B103" ]; then
+	MODEL_NAME="NAS540"
+	echo "${MODEL_NAME}" > /etc/modelname
+elif [ "${MODEL_ID}" = "B203" ]; then
+	MODEL_NAME="NAS520"
+	echo "${MODEL_NAME}" > /etc/modelname
+elif [ "${MODEL_ID}" = "B403" ]; then
+	MODEL_NAME="NAS542"
+	echo "${MODEL_NAME}" > /etc/modelname
+
+elif [ "${MODEL_ID}" = "B303" ]; then
+        MODEL_NAME="NAS326"
+        echo "${MODEL_NAME}" > /etc/modelname
+
+elif [ "${MODEL_ID}" = "AD03" ]; then
+        MODEL_NAME="NSA310S"
+        echo "${MODEL_NAME}" > /etc/modelname
+elif [ "${MODEL_ID}" = "AF03" ]; then
+        MODEL_NAME="NSA320S"
+        echo "${MODEL_NAME}" > /etc/modelname
+elif [ "${MODEL_ID}" = "AA03" ]; then
+        MODEL_NAME="NSA325"
+        echo "${MODEL_NAME}" > /etc/modelname
+
+else
+	echo "\033[1;31mUnknown MODEL!!!!\033[0m"
+fi
+

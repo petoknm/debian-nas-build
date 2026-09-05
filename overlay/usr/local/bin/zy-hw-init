@@ -1,0 +1,98 @@
+#!/bin/sh
+
+. /etc/zy-profile
+
+ECHO="/bin/echo"
+RM="/bin/rm"
+IFCONFIG="/sbin/ifconfig"
+IP="/bin/ip"
+MOUNT="/bin/mount"
+MKDIR="/bin/mkdir"
+RMDIR="/bin/rmdir"
+CAT="/bin/cat"
+
+if [ ! -e /dev/gpio ]; then
+  # Create device node for gpio control
+  #mknod -m 644 /dev/gpio c `cat /proc/devices  | grep gpio | awk '{print $1}'` 0
+  mknod -m 644 /dev/gpio c 253 0
+fi
+
+#Insert pfe module with lro on and tx_qos off.
+insmod /lib/modules/`uname -r`/kernel/drivers/pfe_ctrl/pfe.ko lro_mode=1 tx_qos=0
+#sleep 2
+
+# set watchdog timer
+# - if wdt is not reset until 15 seconds -> reset CPU
+# - in normal status, wdt will be reset every 8 seconds
+WDT_DEV="/dev/comcerto_wdt"
+WD0_DEV="/dev/watchdog0"
+RETRY_TIMES=0
+MAX_RETRY_TIMES=10
+ls -l ${WDT_DEV}
+while [ ! -c "${WDT_DEV}" -a ! -c "${WD0_DEV}" ] &&  [ ${RETRY_TIMES} -lt ${MAX_RETRY_TIMES} ]
+do
+        RETRY_TIMES=$((RETRY_TIMES+1))
+        echo "no ${WDT_DEV} exist, sleep 1 second and retry it (${RETRY_TIMES})."
+        sleep 1
+done
+[ ! -c "${WDT_DEV}" -a -c "${WD0_DEV}" ] && WDT_DEV=${WD0_DEV}
+
+if [ -c ${WDT_DEV} ]; then
+        echo -e "\033[032mStarting watchdog ...\033[0m"
+        /bin/nice -n -20 /sbin/watchdog -t 8 -T 15 ${WDT_DEV}
+else
+        echo -e "\033[032mNo ${WDT_DEV} exist and watchdog will not be started.\033[0m"
+fi
+
+
+# stop MCU watchdog timer (will reset CPU every 60 seconds if MCU watchdog timer is not reset)
+# 1: stop(reset) MCU watchdog
+# 0: resume MCU watchdog timer
+ls -l /proc/mcu_wdt
+echo 1 > /proc/mcu_wdt
+
+#Set the port range from 32769 to 42768
+${ECHO} "32769 42768"  > /proc/sys/net/ipv4/ip_local_port_range
+${ECHO} 8192 > /proc/sys/vm/min_free_kbytes
+${ECHO} 100 > /proc/sys/vm/vfs_cache_pressure
+${ECHO} 5 > /proc/sys/vm/dirty_background_ratio
+${ECHO} 10 > /proc/sys/vm/dirty_ratio
+${ECHO} "1 1" > /proc/sys/vm/lowmem_reserve_ratio
+
+#Set the TCP memory parameter to tune up performance
+${ECHO} "512 87380 2048000" > /proc/sys/net/ipv4/tcp_rmem
+${ECHO} "512 65536 2048000" > /proc/sys/net/ipv4/tcp_wmem
+
+#Set the net core buffer to tune up performanc
+${ECHO} 524288 > /proc/sys/net/core/rmem_max
+${ECHO} 524288 > /proc/sys/net/core/wmem_max
+
+
+##### Setup Network settings for temporary use
+${IFCONFIG} wan0 down
+${IP} link set dev wan0 name eth0
+
+${IFCONFIG} lan0 down
+${IP} link set dev lan0 name eth1
+
+${IFCONFIG} eth0 down
+${IFCONFIG} eth0 hw ether `${MRD_MAC} eth0`
+#${IP} link set dev eth0 name egiga0
+
+${IFCONFIG} eth1 down
+${IFCONFIG} eth1 hw ether `${MRD_MAC} eth1`
+#${IP} link set dev eth1 name egiga1
+
+#${IFCONFIG} egiga0 up
+
+#${IFCONFIG} egiga1 up
+
+#if [ ! -e /etc/.zy-first.done ]; then
+#  sed -i s/'eth0'/'egiga0'/g /etc/network/interfaces
+#  sed -i s/'eth1'/'egiga1'/g /etc/network/interfaces
+#fi
+
+# Set RTC time to system time
+/sbin/rtcAccess init
+/sbin/rtcAccess rtctosys
+

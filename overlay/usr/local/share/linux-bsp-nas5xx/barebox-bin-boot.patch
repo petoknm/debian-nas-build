@@ -1,0 +1,16 @@
+diff -ur a/bin/boot b/bin/boot
+--- a/bin/boot	2024-07-09 22:21:02.931873145 +0200
++++ b/bin/boot	2023-07-12 17:03:34.103828000 +0200
+@@ -41,7 +41,11 @@
+ 		rootfs_mtdblock=$rootfs_mtdblock_nor
+ 	fi
+ 
+-	if [ x$rootfs_type = xubifs ]; then
++	if [ x$next_bootfrom = x2 ]; then
++		bootargs="$bootargs earlyprintk"
++		bootargs="$bootargs drive_bays=4 syno_hw_version=NAS540v10 ihd_num=4 netif_num=2 root=PARTUUID=54cdf5da-deb1-f007-a694-32880502ef34 rootdelay=5 panic=5"
++		rootfs_type=ext4
++	elif [ x$rootfs_type = xubifs ]; then
+ 		if [ -z $ubiroot ]; then
+ 			ubiroot="rootfs"
+ 		fi
