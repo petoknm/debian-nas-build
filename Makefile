@@ -255,6 +255,8 @@ image: diskimage
 diskimage:
 	@echo "=== [Stage 5] Generating Disk Image ==="
 	mkdir -p images mnt_tmp
+	echo "$(HOSTNAME)" > $(R)/etc/hostname
+	sed -i -E 's/127\.0\.1\.1.*/127.0.1.1\t$(HOSTNAME)/' $(R)/etc/hosts 2>/dev/null || true
 	chmod +x $(R)/usr/local/bin/* $(R)/debinit.sh 2>/dev/null || true
 	rm -f $(R)/root/qemu_*.core 2>/dev/null || true
 	rm -rf $(R)/tmp/* $(R)/var/tmp/*
