@@ -43,14 +43,11 @@ while true; do
 	case "${CHOICE}" in
 		1)
 			M=$("${TUI_BIN}" --title "Target Hardware Model" --cancel-button "Back" --ok-button "Select" \
-				--menu "Select your Zyxel NAS device:" 15 65 7 \
+				--menu "Select your Zyxel NAS device:" 13 65 4 \
 				"nas542"  "Zyxel NAS542 (LS1024A 4-Bay)" \
 				"nas540"  "Zyxel NAS540 (LS1024A 4-Bay)" \
 				"nas520"  "Zyxel NAS520 (LS1024A 2-Bay)" \
 				"nas326"  "Zyxel NAS326 (Armada 380 2-Bay)" \
-				"nsa325"  "Zyxel NSA325 (Kirkwood 2-Bay)" \
-				"nsa320s" "Zyxel NSA320S (Kirkwood 2-Bay)" \
-				"nsa310s" "Zyxel NSA310S (Kirkwood 1-Bay)" \
 				3>&1 1>&2 2>&3 || true)
 			[ -n "${M}" ] && MODEL="${M}"
 			;;

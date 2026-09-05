@@ -7,8 +7,7 @@ This project builds customized, bootable **Debian 12 (Bookworm)** disk images wi
 ## Supported Hardware
 
 - **Zyxel NAS542, NAS540, NAS520** (Mindspeed Comcerto 2000 / LS1024A, ARMv7 Cortex-A9 dual-core)
-- **Zyxel NAS326** (Marvell Armada 380)
-- **Zyxel NSA310, NSA310S, NSA320, NSA320S, NSA325** (Marvell Kirkwood)
+- **Zyxel NAS326** (Marvell Armada 380, ARMv7 Cortex-A9 dual-core)
 
 ---
 

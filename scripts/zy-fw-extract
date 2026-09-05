@@ -84,10 +84,10 @@ fi
 # DATA_0102: model number 2
 
 # DATA_0200: core checksum
-# DATA_0201: ZLD checksum; in NSA-310, it is the md5sum of sysdisk.img.gz
+# DATA_0201: ZLD checksum (md5sum of sysdisk.img.gz)
 # DATA_0202: ROM checksum
-# DATA_0203: InitRD checksum; there is no InitRD in NSA-310
-# DATA_0204: IMG checksum; in NSA-310, it is the md5sum of sysdisk.img
+# DATA_0203: InitRD checksum
+# DATA_0204: IMG checksum (md5sum of sysdisk.img)
 
 # DATA_1000: kernel file, uImage
 # DATA_1002: InitRD image, initrd.img.gz

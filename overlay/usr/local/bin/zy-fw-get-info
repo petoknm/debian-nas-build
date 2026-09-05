@@ -42,16 +42,6 @@ elif [ "${MODEL_ID}" = "B303" ]; then
         MODEL_NAME="NAS326"
         echo "${MODEL_NAME}" > /etc/modelname
 
-elif [ "${MODEL_ID}" = "AD03" ]; then
-        MODEL_NAME="NSA310S"
-        echo "${MODEL_NAME}" > /etc/modelname
-elif [ "${MODEL_ID}" = "AF03" ]; then
-        MODEL_NAME="NSA320S"
-        echo "${MODEL_NAME}" > /etc/modelname
-elif [ "${MODEL_ID}" = "AA03" ]; then
-        MODEL_NAME="NSA325"
-        echo "${MODEL_NAME}" > /etc/modelname
-
 else
 	echo "\033[1;31mUnknown MODEL!!!!\033[0m"
 fi

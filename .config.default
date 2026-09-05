@@ -1,7 +1,7 @@
 # ==============================================================================
 # Debian NAS Build Configuration
 # ==============================================================================
-# Target hardware model: nas542, nas540, nas520, nas326, nsa325, nsa320s, nsa310s
+# Target hardware model: nas542, nas540, nas520, nas326
 MODEL=nas542
 
 # OpenMediaVault 7 (true / false)
