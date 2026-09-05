@@ -18,6 +18,8 @@ This project builds customized, bootable **Debian 12 (Bookworm)** disk images wi
 - **OpenMediaVault 7 (Sandworm)**: Pre-configured with PHP-FPM 8.2, Nginx, engine daemon, and PAM authentication.
 - **Fully Automated First-Boot Kernel Flashing**: Boots via USB, automatically flashes the 6.12 kernel to the alternate NAND partition, updates Barebox bootloader parameters, beeps the buzzer, and reboots directly into modern Linux.
 - **Dual-Slot NAND Safety**: Dynamically detects whether the NAS is booted from slot 1 or slot 2 and targets the opposite partition, ensuring the stock factory kernel is never overwritten.
+- **Native systemd Integration**: Clean hardware management via native systemd units for fan control, LEDs, buttons, and poweroff—no legacy SysV init or opaque archives.
+- **Online Rootfs Auto-Expansion**: Convenient `zy-expand-rootfs` utility dynamically expands the root partition to 100% of any USB drive size online.
 - **ARM Performance Tuning**: Lowers PHP-FPM process concurrency and tunes frontend polling intervals to optimize responsiveness on low-power dual-core ARM CPUs.
 - **Modern OpenSSH 9.2**: Full root & admin SSH support with out-of-the-box password and public-key authentication.
 
@@ -30,10 +32,11 @@ You can build on any modern Linux distribution using **Podman** or **Docker** (r
 Required tools on the build host:
 - `podman` or `docker` (loop-device access needs `--privileged` and root/sudo privileges)
 - `curl` or `wget` (handled automatically by `make` if needed)
+- `whiptail` *(optional)*: only required if running interactive `make menuconfig` on the host
 - Several GB of free disk space for Debian bootstrap, packages, and images
 - A USB flash drive (at least 4GB or 8GB recommended)
 
-The build downloads Zyxel factory firmware from `ftp.zyxel.com` automatically and unpacks it under `fw/`. You do not need to prepare firmware manually.
+The build automatically downloads Zyxel factory firmware from maintained community mirrors (`zyxel.ddnss.eu`) and unpacks it under `fw/`. You do not need to prepare firmware manually.
 
 ---
 
@@ -69,7 +72,7 @@ make flash DISK=/dev/sdX
 | `make firmware` | Stage 2: Extract Zyxel vendor hardware tools from firmware |
 | `make omv` | Stage 3: Install & configure OpenMediaVault 7 with ARM tuning |
 | `make kernel` | Stage 4: Deploy Linux 6.12 BSP and automated NAND boot flashers |
-| `make prep` | Download tested Linux 6.12 kernel and prepare config archives |
+| `make prep` | Download tested Linux 6.12 kernel and verify `.config` |
 | `make shell` | Drop into an interactive container `bash` shell |
 | `make clean` | Remove temporary build files and generated images |
 | `make flash DISK=/dev/sdX` | Flash the latest built image to a target USB drive |
@@ -86,6 +89,19 @@ The generated disk image is saved under `images/`:
 ```
 images/debian-nas-bookworm-YY.DDD-armhf.img.zst
 ```
+
+---
+
+## Repository Architecture
+
+The project maintains a strict separation between build-time tools and runtime NAS components:
+
+- **`scripts/` (Build-Time Host Tools)**:
+  Host- and container-side utilities for unpacking factory Zyxel firmware (`zy-fw-extract`, `zy-fw-unpack.py`), extracting vendor hardware control binaries (`zy-fw-get-bin`, `zy-fw-get-lib`), and repackaging multi-part kernel images (`repack-zImage.sh`). Modernized for Python 3 and rootless container builds.
+- **`overlay/` (Runtime NAS Files)**:
+  Target root filesystem overlay installed onto the Debian image. Contains native systemd unit definitions (`zy-button.service`, `zy-fan.service`, `zy-hdd-pm.service`, `zy-led.service`, `zy-poweroff.service`, `zy-ready.service`), hardware control scripts, boot files, and Zyxel wrapper binaries. All files are tracked transparently in Git with no opaque binary archive blobs.
+- **`armhf/`**:
+  The active Debian 12 armhf debootstrap tree. The project strictly preserves Debian 12 merged-usr compatibility (`/lib -> usr/lib`, `/sbin -> usr/sbin`, `/bin -> usr/bin`).
 
 ---
 
@@ -141,24 +157,32 @@ Once the NAS reboots and acquires an IP address via DHCP:
 
 ## Expanding the USB Root Partition (Online)
 
-The flashed image creates a default ~2.7 GB root partition. If your USB drive is larger (e.g. 16 GB, 32 GB, or 64 GB), you can expand the root partition to use 100% of the stick online without rebooting:
+The flashed image creates a default ~2.7 GB root partition so it can be written to almost any USB stick size. If your USB drive is larger (e.g. 8 GB, 16 GB, 32 GB, or 64 GB), you can easily expand the root partition to use 100% of the drive online without rebooting:
 
-1. SSH into the NAS as root:
-   ```bash
-   ssh root@<nas-ip>
-   ```
-2. Move the backup GPT header to the physical end of the disk and expand the partition:
-   ```bash
-   # (Assuming USB drive is /dev/sde - verify with lsblk first)
-   sgdisk -e /dev/sde
-   parted -s /dev/sde resizepart 2 100%
-   partx -u /dev/sde
-   resize2fs /dev/sde2
-   ```
-3. Check your new free space:
-   ```bash
-   df -h /
-   ```
+### Option 1: Automated One-Command Expansion (Recommended)
+SSH into the NAS and run the pre-installed expansion script:
+```bash
+ssh root@<nas-ip>
+zy-expand-rootfs
+```
+This utility automatically detects your active root block device, shifts the backup GPT header to the end of the disk, expands partition 2 to 100%, reloads the kernel partition table, and resizes the ext4 filesystem online.
+
+### Option 2: Manual Expansion via parted
+If you prefer running the commands step-by-step manually:
+```bash
+ssh root@<nas-ip>
+
+# (Assuming the USB drive is /dev/sde - verify with lsblk first)
+sgdisk -e /dev/sde
+parted -s /dev/sde resizepart 2 100%
+partx -u /dev/sde
+resize2fs /dev/sde2
+```
+
+Verify the expanded filesystem:
+```bash
+df -h /
+```
 
 ---
 
