@@ -117,6 +117,8 @@ armhf/bin/bash:
 	printf 'deb http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware\n' >> $(R)/etc/apt/sources.list
 	echo "$(HOSTNAME)" > $(R)/etc/hostname
 	printf '127.0.0.1\tlocalhost\n::1\t\tlocalhost ip6-localhost ip6-loopback\nfe00::0\t\tip6-localnet\nff00::0\t\tip6-mcastprefix\nff02::1\t\tip6-allnodes\nff02::2\t\tip6-allrouters\n127.0.1.1\t$(HOSTNAME)\n' > $(R)/etc/hosts
+	printf 'boardModel=%s\nimageOmv=%s\nimageOmvInit=%s\nimageHostname=%s\nimageEth0Ip=%s\n' \
+		"$(MODEL)" "$(ENABLE_OMV)" "$(ENABLE_OMV)" "$(HOSTNAME)" "$(ETH0_MODE)" > $(R)/etc/debian-build.conf
 	printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > $(R)/etc/resolv.conf
 	printf 'devpts /dev/pts devpts gid=5,mode=620 0 0\ntmpfs /tmp tmpfs defaults 0 0\n' > $(R)/etc/fstab
 	mkdir -p $(R)/etc/network
@@ -257,6 +259,8 @@ diskimage:
 	mkdir -p images mnt_tmp
 	echo "$(HOSTNAME)" > $(R)/etc/hostname
 	sed -i -E 's/127\.0\.1\.1.*/127.0.1.1\t$(HOSTNAME)/' $(R)/etc/hosts 2>/dev/null || true
+	printf 'boardModel=%s\nimageOmv=%s\nimageOmvInit=%s\nimageHostname=%s\nimageEth0Ip=%s\n' \
+		"$(MODEL)" "$(ENABLE_OMV)" "$(ENABLE_OMV)" "$(HOSTNAME)" "$(ETH0_MODE)" > $(R)/etc/debian-build.conf
 	chmod +x $(R)/usr/local/bin/* $(R)/debinit.sh 2>/dev/null || true
 	rm -f $(R)/root/qemu_*.core 2>/dev/null || true
 	rm -rf $(R)/tmp/* $(R)/var/tmp/*

@@ -1,6 +1,9 @@
 #!/bin/sh
 
-. /etc/debian-build.conf
+[ -f /etc/debian-build.conf ] && . /etc/debian-build.conf || true
+: "${imageOmv:=true}"
+: "${imageOmvInit:=true}"
+: "${boardModel:=nas542}"
 
 if [ -e /tmp/.dru-boot.done ]; then
   exit 0
