@@ -1,10 +1,5 @@
 #!/bin/sh
 
-[ -f /etc/debian-build.conf ] && . /etc/debian-build.conf || true
-: "${imageOmv:=true}"
-: "${imageOmvInit:=true}"
-: "${boardModel:=nas542}"
-
 if [ -e /tmp/.dru-boot.done ]; then
   exit 0
 fi
@@ -18,25 +13,24 @@ fi
 if [ ! -e /etc/.zy-first.done ]; then
   /usr/local/bin/zy-nand-get
 
-  if [ ${imageOmvInit} = true ]; then
-    oi=`which omv-initsystem || true`
-    if [ "X${oi}" = "X" ]; then
-      omv-confdbadm populate
-    else
+  if command -v omv-confdbadm >/dev/null 2>&1 || command -v omv-initsystem >/dev/null 2>&1; then
+    if command -v omv-initsystem >/dev/null 2>&1; then
       omv-initsystem
+    else
+      omv-confdbadm populate
     fi
-    usermod -a -G openmediavault-admin admin
-    dpkg-reconfigure openmediavault-lvm2
+    usermod -a -G openmediavault-admin admin 2>/dev/null || true
+    dpkg-reconfigure openmediavault-lvm2 2>/dev/null || true
 
-    /usr/bin/salt-call --local saltutil.clear_cache
-    omv-salt stage run prepare
+    /usr/bin/salt-call --local saltutil.clear_cache 2>/dev/null || true
+    omv-salt stage run prepare 2>/dev/null || true
   fi
 
   touch /etc/.zy-first.done
 fi
 
-if [ ${imageOmv} = true ]; then
-  omv-mkconf issue
+if command -v omv-mkconf >/dev/null 2>&1; then
+  omv-mkconf issue 2>/dev/null || true
 fi
 
 ipbin=`which ip || true`

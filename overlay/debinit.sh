@@ -1,6 +1,4 @@
 #!/bin/sh
-. /etc/debian-build.conf 2>/dev/null || true
-
 [ -e /proc/mounts ] && ln -sf /proc/mounts /etc/mtab
 
 # Mount essential kernel virtual filesystems
@@ -73,7 +71,7 @@ rm -f /run/nologin
 mount -a 2>/dev/null || true
 /etc/init.d/rc 2 2>/dev/null || true
 
-if [ "${imageOmv:-true}" = "true" ]; then
+if [ -f /etc/default/openmediavault ] || [ -x /usr/sbin/omv-engined ]; then
   /etc/init.d/openmediavault start 2>/dev/null || true
   /etc/init.d/php8.2-fpm restart 2>/dev/null || true
   /etc/init.d/nginx restart 2>/dev/null || true
