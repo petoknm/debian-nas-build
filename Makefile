@@ -31,17 +31,18 @@ FW_URL_nas520 := https://zyxel.ddnss.eu/Users/Mijzelf/Firmware/NAS520_V5.21(AASZ
 FW_URL_nas326 := https://zyxel.ddnss.eu/Users/Mijzelf/Firmware/NAS326/521AAZF13C0.bin
 FW_URL        := $(FW_URL_$(MODEL))
 
-# SaltStack (standalone armhf bundle for OMV)
+# SaltStack & PHP-PAM (standalone armhf bundles for OMV on Debian 13)
 SALT_VER     ?= 3008.1
 SALT_DEB     := packages/salt-minion_$(SALT_VER)-1_armhf.deb
 SALT_DEB_URL ?=
+PHP_PAM_DEB  := packages/php-pam_2.2.5-1+deb13u1_armhf.deb
 
 # Container Runtime
 CONTAINER    ?= $(shell if docker info >/dev/null 2>&1; then which docker; else which podman 2>/dev/null; fi)
 SUDO         ?= $(if $(shell $(CONTAINER) info >/dev/null 2>&1 && echo ok),,sudo)
 BUILDER_IMG  := debian-nas-builder
 
-.PHONY: all full image diskimage bootstrap firmware omv kernel salt-pkg clean-salt prep menuconfig config shell clean flash help builder-image
+.PHONY: all full image diskimage bootstrap firmware omv kernel salt-pkg php-pam-pkg clean-salt clean-all prep menuconfig config shell clean flash help builder-image
 
 # ==============================================================================
 # HOST ORCHESTRATION (IN_CONTAINER == 0)
@@ -71,10 +72,11 @@ diskimage: builder-image prep ## Fast rebuild of USB disk image (~30s)
 bootstrap: builder-image prep ## Stage 1: Run debootstrap inside container
 firmware: builder-image prep  ## Stage 2: Extract Zyxel firmware tools inside container
 salt-pkg: builder-image prep  ## Build or download standalone armhf salt-minion deb
+php-pam-pkg: builder-image prep ## Build standalone armhf php-pam deb
 omv: builder-image prep       ## Stage 3: Install & configure OpenMediaVault inside container
 kernel: builder-image prep    ## Stage 4: Deploy Linux 6.12 kernel & NAND flashers inside container
 
-all full diskimage bootstrap firmware omv kernel salt-pkg:
+all full diskimage bootstrap firmware omv kernel salt-pkg php-pam-pkg:
 	@$(DOCKER_CMD) $@
 
 shell: builder-image ## Drop into an interactive container shell
@@ -204,7 +206,12 @@ $(SALT_DEB):
 		./scripts/build-salt-deb.sh $(R) $@ $(SALT_VER); \
 	fi
 
-omv: $(if $(filter true,$(ENABLE_OMV)),salt-pkg)
+php-pam-pkg: $(PHP_PAM_DEB)
+$(PHP_PAM_DEB):
+	@mkdir -p packages
+	@./scripts/build-php-pam-deb.sh $(R) $@
+
+omv: $(if $(filter true,$(ENABLE_OMV)),salt-pkg php-pam-pkg)
 ifeq ($(ENABLE_OMV),true)
 	@echo "=== [Stage 3] OpenMediaVault Install & Tuning ==="
 	rm -f $(R)/etc/resolv.conf && printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > $(R)/etc/resolv.conf
@@ -224,7 +231,7 @@ ifeq ($(ENABLE_OMV),true)
 	mount -t sysfs sys $(R)/sys 2>/dev/null || true
 	mount -t devpts devpts $(R)/dev/pts -o gid=5,mode=620 2>/dev/null || true
 	trap 'umount -l $(R)/dev/pts $(R)/sys $(R)/proc 2>/dev/null || true; rm -f $(R)/usr/sbin/policy-rc.d $(R)/usr/local/bin/logger $(R)/usr/local/bin/monit' EXIT
-	for deb in packages/salt-minion_*_armhf.deb packages/openmediavault-salt_*_all.deb; do \
+	for deb in packages/*.deb; do \
 		[ -f "$$deb" ] || continue; \
 		pkg=$$(dpkg-deb -f "$$deb" Package 2>/dev/null || true); \
 		if [ -n "$$pkg" ] && ! chroot $(R) dpkg -s "$$pkg" >/dev/null 2>&1; then \
