@@ -1,5 +1,5 @@
 # ==============================================================================
-# Makefile for Debian NAS Build (Zyxel NAS5xx / OpenMediaVault 7)
+# Makefile for Debian NAS Build (Zyxel NAS5xx / OpenMediaVault 8)
 # ==============================================================================
 .ONESHELL:
 SHELL        := /bin/bash
@@ -29,12 +29,17 @@ FW_URL_nas520 := https://zyxel.ddnss.eu/Users/Mijzelf/Firmware/NAS520_V5.21(AASZ
 FW_URL_nas326 := https://zyxel.ddnss.eu/Users/Mijzelf/Firmware/NAS326/521AAZF13C0.bin
 FW_URL        := $(FW_URL_$(MODEL))
 
+# SaltStack (standalone armhf bundle for OMV)
+SALT_VER     ?= 3008.1
+SALT_DEB     := packages/salt-minion_$(SALT_VER)-1_armhf.deb
+SALT_DEB_URL ?=
+
 # Container Runtime
 CONTAINER    ?= $(shell if docker info >/dev/null 2>&1; then which docker; else which podman 2>/dev/null; fi)
 SUDO         ?= $(if $(shell $(CONTAINER) info >/dev/null 2>&1 && echo ok),,sudo)
 BUILDER_IMG  := debian-nas-builder
 
-.PHONY: all full image diskimage bootstrap firmware omv kernel prep menuconfig config shell clean flash help builder-image
+.PHONY: all full image diskimage bootstrap firmware omv kernel salt-pkg clean-salt prep menuconfig config shell clean flash help builder-image
 
 # ==============================================================================
 # HOST ORCHESTRATION (IN_CONTAINER == 0)
@@ -63,10 +68,11 @@ image: diskimage              ## Alias for diskimage
 diskimage: builder-image prep ## Fast rebuild of USB disk image (~30s)
 bootstrap: builder-image prep ## Stage 1: Run debootstrap inside container
 firmware: builder-image prep  ## Stage 2: Extract Zyxel firmware tools inside container
-omv: builder-image prep       ## Stage 3: Install & configure OpenMediaVault 7 inside container
+salt-pkg: builder-image prep  ## Build or download standalone armhf salt-minion deb
+omv: builder-image prep       ## Stage 3: Install & configure OpenMediaVault inside container
 kernel: builder-image prep    ## Stage 4: Deploy Linux 6.12 kernel & NAND flashers inside container
 
-all full diskimage bootstrap firmware omv kernel:
+all full diskimage bootstrap firmware omv kernel salt-pkg:
 	@$(DOCKER_CMD) $@
 
 shell: builder-image ## Drop into an interactive container shell
@@ -87,6 +93,9 @@ flash: ## Flash latest built image to USB drive (Usage: make flash DISK=/dev/sdX
 
 clean: ## Clean generated disk images and temporary artifacts
 	rm -rf images/* armhf/tmp/*
+
+clean-salt: ## Remove cached salt-minion armhf deb packages
+	rm -f packages/*.deb
 
 help: ## Show this help message
 	@echo "Usage: make [target] [VARIABLE=value]"
@@ -170,8 +179,9 @@ armhf/firmware/bin/buzzerc:
 		[ -d fw/newroot_tmp/sbin ] && cp -p fw/newroot_tmp/sbin/* $(R)/firmware/bin/ 2>/dev/null || true; \
 		[ -d fw/newroot_tmp/firmware ] && cp -a fw/newroot_tmp/firmware/* $(R)/firmware/ 2>/dev/null || true; \
 		[ -d fw/newroot_tmp/firmware/sbin ] && cp -p fw/newroot_tmp/firmware/sbin/* $(R)/usr/local/bin/ 2>/dev/null || true; \
-		[ -d fw/newroot_tmp/lib ] && cp -p fw/newroot_tmp/lib/libzy* $(R)/usr/lib/ 2>/dev/null || true; \
-		[ -d fw/newroot_tmp/lib ] && cp -p fw/newroot_tmp/lib/libzy* $(R)/usr/lib/arm-linux-gnueabihf/ 2>/dev/null || true; \
+		[ -d fw/newroot_tmp/lib ] && cp -p fw/newroot_tmp/lib/libzyboot* $(R)/usr/lib/ 2>/dev/null || true; \
+		[ -d fw/newroot_tmp/lib ] && cp -p fw/newroot_tmp/lib/libzyboot* $(R)/usr/lib/arm-linux-gnueabihf/ 2>/dev/null || true; \
+		rm -f $(R)/usr/lib/libzy.so $(R)/usr/lib/arm-linux-gnueabihf/libzy.so 2>/dev/null || true; \
 		[ -d fw/newroot_tmp/lib/firmware ] && cp -a fw/newroot_tmp/lib/firmware/* $(R)/usr/lib/firmware/ 2>/dev/null || true; \
 		rm -rf fw/newroot_tmp; \
 	fi
@@ -179,27 +189,51 @@ armhf/firmware/bin/buzzerc:
 	[ -L $(R)/sbin ] || (rm -rf $(R)/sbin && ln -sf usr/sbin $(R)/sbin)
 	[ -L $(R)/bin ] || (rm -rf $(R)/bin && ln -sf usr/bin $(R)/bin)
 
-omv:
+salt-pkg: $(SALT_DEB)
+$(SALT_DEB):
+	@mkdir -p packages
+	@if [ -n "$(SALT_DEB_URL)" ]; then \
+		echo "=== Downloading precompiled salt-minion armhf package ==="; \
+		(curl -fsSL -o $@ "$(SALT_DEB_URL)" || wget -qO $@ "$(SALT_DEB_URL)"); \
+	else \
+		./scripts/build-salt-deb.sh $(R) $@ $(SALT_VER); \
+	fi
+
+omv: $(if $(filter true,$(ENABLE_OMV)),salt-pkg)
 ifeq ($(ENABLE_OMV),true)
-	@echo "=== [Stage 3] OpenMediaVault 7 Install & Tuning ==="
+	@echo "=== [Stage 3] OpenMediaVault Install & Tuning ==="
 	rm -f $(R)/etc/resolv.conf && printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > $(R)/etc/resolv.conf
-	mkdir -p $(R)/etc/apt/trusted.gpg.d $(R)/etc/apt/sources.list.d $(R)/etc/apt/preferences.d $(R)/usr/share/keyrings
+	mkdir -p $(R)/etc/apt/trusted.gpg.d $(R)/etc/apt/sources.list.d $(R)/etc/apt/preferences.d $(R)/usr/share/keyrings $(R)/usr/local/bin
 	[ -f $(R)/etc/apt/trusted.gpg.d/openmediavault-archive-keyring.gpg ] || \
 		(curl -fsSL https://packages.openmediavault.org/public/archive.key | gpg --dearmor --batch --yes -o $(R)/etc/apt/trusted.gpg.d/openmediavault-archive-keyring.gpg 2>/dev/null || true)
 	[ -f $(R)/usr/share/keyrings/omvextras.gpg ] || \
 		(curl -fsSL https://raw.githubusercontent.com/OpenMediaVault-Plugin-Developers/packages/master/debian/omvextras2030.asc | gpg --dearmor --batch --yes -o $(R)/usr/share/keyrings/omvextras.gpg 2>/dev/null && cp -p $(R)/usr/share/keyrings/omvextras.gpg $(R)/etc/apt/trusted.gpg.d/omvextras.gpg 2>/dev/null || true)
-	printf 'deb https://packages.openmediavault.org/public sandworm main\n' > $(R)/etc/apt/sources.list.d/openmediavault.list
-	printf 'Package: linux-image-*\nPin: release a=sandworm\nPin-Priority: -1\n' > $(R)/etc/apt/preferences.d/openmediavault-kernel.pref
+	chroot $(R) dpkg --add-architecture arm64 2>/dev/null || true
+	printf 'deb [trusted=yes arch=arm64] https://packages.openmediavault.org/public synchrony main\n' > $(R)/etc/apt/sources.list.d/openmediavault.list
+	printf 'Package: linux-image-*\nPin: release a=synchrony\nPin-Priority: -1\n' > $(R)/etc/apt/preferences.d/openmediavault-kernel.pref
 	printf '#!/bin/sh\nexit 101\n' > $(R)/usr/sbin/policy-rc.d && chmod +x $(R)/usr/sbin/policy-rc.d
+	printf '#!/bin/sh\n/usr/bin/logger "$$@" 2>/dev/null || true\nexit 0\n' > $(R)/usr/local/bin/logger && chmod +x $(R)/usr/local/bin/logger
+	printf '#!/bin/sh\nexit 0\n' > $(R)/usr/local/bin/monit && chmod +x $(R)/usr/local/bin/monit
+	chroot $(R) sh -c 'ln -sf /usr/bin/php /usr/bin/php8.4 2>/dev/null || true'
 	mount -t proc proc $(R)/proc 2>/dev/null || true
 	mount -t sysfs sys $(R)/sys 2>/dev/null || true
 	mount -t devpts devpts $(R)/dev/pts -o gid=5,mode=620 2>/dev/null || true
-	trap 'umount -l $(R)/dev/pts $(R)/sys $(R)/proc 2>/dev/null || true; rm -f $(R)/usr/sbin/policy-rc.d' EXIT
+	trap 'umount -l $(R)/dev/pts $(R)/sys $(R)/proc 2>/dev/null || true; rm -f $(R)/usr/sbin/policy-rc.d $(R)/usr/local/bin/logger $(R)/usr/local/bin/monit' EXIT
+	for deb in packages/salt-minion_*_armhf.deb packages/openmediavault-salt_*_all.deb; do \
+		[ -f "$$deb" ] || continue; \
+		pkg=$$(dpkg-deb -f "$$deb" Package 2>/dev/null || true); \
+		if [ -n "$$pkg" ] && ! chroot $(R) dpkg -s "$$pkg" >/dev/null 2>&1; then \
+			echo "=== Installing standalone armhf $$pkg package ==="; \
+			cp "$$deb" $(R)/tmp/pkg.deb && \
+			(chroot $(R) dpkg -i /tmp/pkg.deb || (DEBIAN_FRONTEND=noninteractive chroot $(R) apt-get install -f -y)) && \
+			rm -f $(R)/tmp/pkg.deb; \
+		fi; \
+	done
 	chroot $(R) dpkg -s openmediavault >/dev/null 2>&1 || { \
 		DEBIAN_FRONTEND=noninteractive chroot $(R) apt-get update -qq && \
 		DEBIAN_FRONTEND=noninteractive chroot $(R) apt-get install -y --no-install-recommends openmediavault openmediavault-md openmediavault-lvm2; }
 	chroot $(R) dpkg -s openmediavault-omvextrasorg >/dev/null 2>&1 || ( \
-		curl -fsSL -o $(R)/tmp/omvextras.deb https://github.com/OpenMediaVault-Plugin-Developers/packages/raw/master/openmediavault-omvextrasorg_latest_all7.deb 2>/dev/null && \
+		curl -fsSL -o $(R)/tmp/omvextras.deb https://github.com/OpenMediaVault-Plugin-Developers/packages/raw/master/openmediavault-omvextrasorg_latest_all8.deb 2>/dev/null && \
 		DEBIAN_FRONTEND=noninteractive chroot $(R) apt-get install -y --no-install-recommends /tmp/omvextras.deb 2>/dev/null || true; \
 		rm -f $(R)/tmp/omvextras.deb )
 	chroot $(R) groupadd -g 500 everyone 2>/dev/null || true
@@ -217,7 +251,7 @@ ifeq ($(ENABLE_OMV),true)
 	       -e 's/#*PermitRootLogin.*/PermitRootLogin yes/' \
 	       -e 's/#*PasswordAuthentication.*/PasswordAuthentication yes/' $(R)/etc/ssh/sshd_config $(R)/etc/pam.d/sshd 2>/dev/null || true
 	sed -i 's|^auth.*pam_faillock.so|#&|' $(R)/etc/pam.d/openmediavault* 2>/dev/null || true
-	[ -f $(R)/etc/php/8.2/fpm/pool.d/openmediavault-webgui.conf ] && sed -i 's/pm.max_children = .*/pm.max_children = 4/' $(R)/etc/php/8.2/fpm/pool.d/openmediavault-webgui.conf 2>/dev/null || true
+	for p in $(R)/etc/php/*/fpm/pool.d/openmediavault-webgui.conf; do [ -f "$$p" ] && sed -i 's/pm.max_children = .*/pm.max_children = 4/' "$$p" 2>/dev/null || true; done
 	for f in $(R)/var/www/openmediavault/main.*.js ; do [ -f "$$f" ] && sed -i 's/defaultTo(Be,500)/defaultTo(Be,2500)/g' "$$f" 2>/dev/null || true; done
 	mkdir -p $(R)/usr/share/openmediavault/initsystem.disabled
 	for s in 60rootfs 65mdadm 90sysctl 99rrd; do [ -e $(R)/usr/share/openmediavault/initsystem/$$s ] && mv $(R)/usr/share/openmediavault/initsystem/$$s $(R)/usr/share/openmediavault/initsystem.disabled/ 2>/dev/null || true; done
@@ -234,7 +268,7 @@ ifeq ($(ENABLE_OMV),true)
 	chroot $(R) systemctl enable ssh 2>/dev/null || true
 	chroot $(R) systemctl disable quota quotaon systemd-quotacheck openmediavault-beep-down openmediavault-beep-up 2>/dev/null || true
 	umount -l $(R)/dev/pts $(R)/sys $(R)/proc 2>/dev/null || true
-	rm -f $(R)/usr/sbin/policy-rc.d
+	rm -f $(R)/usr/sbin/policy-rc.d $(R)/usr/local/bin/logger $(R)/usr/local/bin/monit
 	chroot $(R) apt-get clean 2>/dev/null || true
 	rm -f $(R)/root/qemu_*.core 2>/dev/null || true
 	rm -rf $(R)/tmp/* $(R)/var/tmp/*
@@ -250,7 +284,7 @@ kernel:
 		unzip -qo kernel/$(KERNEL_ZIP) -d "$$TMP"; \
 		[ -f "$$TMP/uImage" ] && cp -p "$$TMP/uImage" $(BOOTDIR)/ && cp -p "$$TMP/uImage" kernel/ 2>/dev/null || true; \
 		find "$$TMP" -name "*.dtb" -exec cp -p {} $(BOOTDIR)/ \;; \
-		chroot $(R) sh -c "dpkg -i --force-depends $$REL/*.deb 2>/dev/null || true"; \
+		chroot $(R) sh -c "rm -f $$REL/linux-setup*.deb && dpkg -i --force-depends $$REL/*.deb 2>/dev/null || true"; \
 		rm -rf "$$TMP"; \
 	fi
 	find $(R)/usr/lib/linux-image-* -name "*.dtb" -exec cp -p {} $(BOOTDIR)/ \; 2>/dev/null || true
