@@ -73,7 +73,7 @@ mount -a 2>/dev/null || true
 
 if [ -f /etc/default/openmediavault ] || [ -x /usr/sbin/omv-engined ]; then
   /etc/init.d/openmediavault start 2>/dev/null || true
-  /etc/init.d/php8.2-fpm restart 2>/dev/null || true
+  for s in /etc/init.d/php*-fpm; do [ -x "$s" ] && "$s" restart 2>/dev/null || true; done
   /etc/init.d/nginx restart 2>/dev/null || true
   /etc/init.d/openmediavault-engined restart 2>/dev/null || /usr/sbin/omv-engined 2>/dev/null || true
 fi

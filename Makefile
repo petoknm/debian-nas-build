@@ -96,6 +96,9 @@ flash: ## Flash latest built image to USB drive (Usage: make flash DISK=/dev/sdX
 clean: ## Clean generated disk images and temporary artifacts
 	rm -rf images/* armhf/tmp/*
 
+clean-all: clean ## Clean bootstrapped rootfs, extracted firmware, and images
+	@$(SUDO) $(CONTAINER) run --rm -v $(CURDIR):/build -w /build $(BUILDER_IMG) rm -rf armhf fw mnt_tmp
+
 clean-salt: ## Remove cached salt-minion armhf deb packages
 	rm -f packages/*.deb
 
