@@ -14,6 +14,7 @@ MODEL        ?= nas542
 ENABLE_OMV   ?= true
 HOSTNAME     ?= debian-nas
 DISK         ?=
+IMG          ?=
 ZSTD_LEVEL   ?= 9
 DEBIAN_SUITE ?= trixie
 DEBIAN_VER   ?= 13
@@ -42,7 +43,7 @@ CONTAINER    ?= $(shell if docker info >/dev/null 2>&1; then which docker; else 
 SUDO         ?= $(if $(shell $(CONTAINER) info >/dev/null 2>&1 && echo ok),,sudo)
 BUILDER_IMG  := debian-nas-builder
 
-.PHONY: all full image diskimage bootstrap firmware omv kernel salt-pkg php-pam-pkg clean-salt clean-all prep menuconfig config shell clean flash help builder-image
+.PHONY: all full image diskimage bootstrap firmware omv kernel salt-pkg php-pam-pkg clean-salt clean-all prep menuconfig config shell clean flash test verify help builder-image
 
 # ==============================================================================
 # HOST ORCHESTRATION (IN_CONTAINER == 0)
@@ -101,8 +102,12 @@ clean: ## Clean generated disk images and temporary artifacts
 clean-all: clean ## Clean bootstrapped rootfs, extracted firmware, and images
 	@$(SUDO) $(CONTAINER) run --rm -v $(CURDIR):/build -w /build $(BUILDER_IMG) rm -rf armhf fw mnt_tmp
 
-clean-salt: ## Remove cached salt-minion armhf deb packages
+clean-salt: ## Remove cached standalone armhf deb packages
 	rm -f packages/*.deb
+
+test: verify ## Alias for verify
+verify: ## Run comprehensive integrity tests on disk image (Usage: make test [IMG=...])
+	@./scripts/test-image-integrity.sh $(IMG)
 
 help: ## Show this help message
 	@echo "Usage: make [target] [VARIABLE=value]"

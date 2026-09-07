@@ -75,7 +75,9 @@ make flash DISK=/dev/sdX
 | `make prep` | Download tested Linux 6.12 kernel and verify `.config` |
 | `make shell` | Drop into an interactive container `bash` shell |
 | `make clean` | Remove temporary build files and generated images |
-| `make clean-salt` | Remove cached standalone `salt-minion` armhf deb packages |
+| `make clean-all` | Clean bootstrapped rootfs, extracted firmware, and images |
+| `make clean-salt` | Remove cached standalone `salt-minion` and `php-pam` deb packages |
+| `make test` *(or `make verify`)* | Run automated 24-point integrity test suite on disk image |
 | `make flash DISK=/dev/sdX` | Flash the latest built image to a target USB drive |
 | `make help` | Print help and list all targets and variables |
 
@@ -134,6 +136,43 @@ Or manually with `dd` and `zstd`:
 # Decompress and flash (replace /dev/sdX with your actual USB drive)
 zstd -dc images/debian-nas-trixie-*.img.zst | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
 ```
+
+---
+
+## Automated Image Integrity Test Suite
+
+To ensure image integrity and target NAS compatibility after any code modifications, run the automated test suite:
+
+```bash
+make test
+# or specify an explicit image:
+make test IMG=images/debian-nas-trixie-26.250-armhf.img.zst
+```
+
+The test runner (`scripts/test-image-integrity.sh`) executes **24 non-destructive validation checks** in seconds without requiring root/sudo privileges:
+
+1. **Image Archive & Partition Table**:
+   - Validates `zstd` archive checksums and successful decompression.
+   - Confirms GPT partition table integrity and structure (`sgdisk`).
+   - Verifies exact partition names and GUIDs (`TC_BOOT` Microsoft Basic Data `54CDF5DA-DEB1-B007-A694-32880502EF34`, `TC_ROOT` Linux Filesystem `54CDF5DA-DEB1-F007-A694-32880502EF34`).
+2. **Boot Partition (`TC_BOOT`)**:
+   - Confirms presence and minimum size of Linux 6.12 `uImage` and initramfs.
+   - Validates Comcerto 2000 Device Tree Blobs (`ls1024a-nas540.dtb`, `ls1024a-nas520.dtb`, `ls1024a-nas5xx.dtb`).
+   - Confirms Barebox stock pivot scripts (`debroot.sh`, `usb_key_func.sh`).
+   - Confirms stock authentication files (`md5sum`, `nas5xx_check_file`, `salted_md5sum_libzy.so.fw5`).
+   - Asserts zero legacy NSA / STG clutter.
+3. **Root Filesystem (`TC_ROOT`)**:
+   - Checks pure Debian 13 (Trixie) release versioning.
+   - Verifies `/etc/fstab` persistent LABEL mounts.
+   - Validates first-boot kernel NAND flasher and expander scripts (`debinit.sh`, `zy-bb-env-and-kernel2-write`, `zy-kernel2-write`, `zy-expand-rootfs`).
+   - Verifies dynamic PHP-FPM service detection and vendor controls (`info_setenv`, `buzzerc`, `flash_erase`, `nandwrite`).
+   - Checks populated Linux 6.12 kernel modules tree (`usr/lib/modules/6.12.95+nas5xx`).
+4. **OpenMediaVault 8 & SaltStack Runtime**:
+   - Validates package installation and configuration status (`openmediavault`, `openmediavault-omvextrasorg`).
+   - Confirms standalone 32-bit `armhf` packages (`php-pam`, `salt-minion`, `openmediavault-salt`).
+   - Checks CLI symlinks (`salt-call`, `salt-minion`).
+   - Verifies enabled multi-user systemd targets (`openmediavault-engined`, `nginx`, `ssh`).
+   - Confirms ARM performance tuning (`pm.max_children = 4`).
 
 ---
 
