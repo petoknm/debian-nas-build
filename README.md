@@ -1,6 +1,6 @@
 # Debian NAS Build for Zyxel Devices
 
-This project builds customized, bootable **Debian 12 (Bookworm)** disk images with **OpenMediaVault 7 (Sandworm)** for Zyxel NAS hardware, featuring modern Linux kernels (6.12.x) and native systemd support.
+This project builds customized, bootable **Debian 12 (Bookworm)** disk images with **OpenMediaVault 8 (Synchrony)** for Zyxel NAS hardware, featuring modern Linux kernels (6.12.x) and native systemd support.
 
 ---
 
@@ -14,7 +14,7 @@ This project builds customized, bootable **Debian 12 (Bookworm)** disk images wi
 ## Key Features
 
 - **Modern Linux Kernel (6.12.x)**: Replaces the deprecated factory Linux 3.2 kernel while preserving factory recovery partitions.
-- **OpenMediaVault 7 (Sandworm)**: Pre-configured with PHP-FPM 8.2, Nginx, engine daemon, and PAM authentication.
+- **OpenMediaVault 8 (Synchrony)**: Pre-configured with PHP-FPM, Nginx, engine daemon, SaltStack 32-bit runtime, and PAM authentication.
 - **Fully Automated First-Boot Kernel Flashing**: Boots via USB, automatically flashes the 6.12 kernel to the alternate NAND partition, updates Barebox bootloader parameters, beeps the buzzer, and reboots directly into modern Linux.
 - **Dual-Slot NAND Safety**: Dynamically detects whether the NAS is booted from slot 1 or slot 2 and targets the opposite partition, ensuring the stock factory kernel is never overwritten.
 - **Native systemd Integration**: Clean hardware management via native systemd units for fan control, LEDs, buttons, and poweroff—no legacy SysV init or opaque archives.
@@ -69,11 +69,13 @@ make flash DISK=/dev/sdX
 | `make image` | Fast rebuild of the USB disk image from existing `armhf/` (~30s) |
 | `make bootstrap` | Stage 1: Run Debian 12 (Bookworm) debootstrap & base packages |
 | `make firmware` | Stage 2: Extract Zyxel vendor hardware tools from firmware |
-| `make omv` | Stage 3: Install & configure OpenMediaVault 7 with ARM tuning |
+| `make salt-pkg` | Build or fetch standalone 32-bit `salt-minion` deb for armhf |
+| `make omv` | Stage 3: Install & configure OpenMediaVault with ARM tuning |
 | `make kernel` | Stage 4: Deploy Linux 6.12 BSP and automated NAND boot flashers |
 | `make prep` | Download tested Linux 6.12 kernel and verify `.config` |
 | `make shell` | Drop into an interactive container `bash` shell |
 | `make clean` | Remove temporary build files and generated images |
+| `make clean-salt` | Remove cached standalone `salt-minion` armhf deb packages |
 | `make flash DISK=/dev/sdX` | Flash the latest built image to a target USB drive |
 | `make help` | Print help and list all targets and variables |
 
@@ -96,11 +98,27 @@ images/debian-nas-bookworm-YY.DDD-armhf.img.zst
 The project maintains a strict separation between build-time tools and runtime NAS components:
 
 - **`scripts/` (Build-Time Host Tools)**:
-  Host- and container-side utilities for unpacking factory Zyxel firmware (`zy-fw-extract`, `zy-fw-unpack.py`), extracting vendor hardware control binaries (`zy-fw-get-bin`, `zy-fw-get-lib`), and repackaging multi-part kernel images (`repack-zImage.sh`). Modernized for Python 3 and rootless container builds.
+  Host- and container-side utilities for unpacking factory Zyxel firmware (`zy-fw-extract`, `zy-fw-unpack.py`), extracting vendor hardware control binaries (`zy-fw-get-bin`, `zy-fw-get-lib`), repackaging multi-part kernel images (`repack-zImage.sh`), and building standalone 32-bit SaltStack deb packages (`build-salt-deb.sh`). Modernized for Python 3 and rootless container builds.
+- **`packages/` (Cached Host Debian Packages)**:
+  Local cache for precompiled or standalone `.deb` packages (such as `salt-minion_*_armhf.deb`).
 - **`overlay/` (Runtime NAS Files)**:
   Target root filesystem overlay installed onto the Debian image. Contains native systemd unit definitions (`zy-button.service`, `zy-fan.service`, `zy-hdd-pm.service`, `zy-led.service`, `zy-poweroff.service`, `zy-ready.service`), hardware control scripts, boot files, and Zyxel wrapper binaries. All files are tracked transparently in Git with no opaque binary archive blobs.
 - **`armhf/`**:
   The active Debian 12 armhf debootstrap tree. The project strictly preserves Debian 12 merged-usr compatibility (`/lib -> usr/lib`, `/sbin -> usr/sbin`, `/bin -> usr/bin`).
+
+---
+
+## 32-bit ARM (armhf) SaltStack Support
+
+Starting with SaltStack 3006+ and OpenMediaVault 8, upstream vendors discontinued official precompiled packages for 32-bit architectures (`armhf`, `i386`). Because OpenMediaVault relies on SaltStack for system orchestration and daemon templating (`omv-salt`), 32-bit platforms cannot install OMV directly from upstream Debian repositories.
+
+This build system solves this by building a standalone 32-bit `salt-minion` bundle on the host using `qemu-arm-static`:
+- **`scripts/build-salt-deb.sh`**:
+  Creates a native 32-bit virtualenv at `/opt/saltstack/salt`, compiles Salt via `pip`, and packages it into `packages/salt-minion_<version>_armhf.deb`.
+- **Automatic Caching**:
+  The generated `.deb` is saved under `packages/` and reused across builds. Run `make clean-salt` if you want to rebuild it from scratch.
+- **Optional Download**:
+  If you host the precompiled deb package elsewhere, you can set `SALT_DEB_URL` in `.config` to download it automatically without compiling locally.
 
 ---
 

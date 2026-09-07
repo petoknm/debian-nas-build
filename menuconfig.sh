@@ -32,7 +32,7 @@ while true; do
 	CHOICE=$("${TUI_BIN}" --title "Debian NAS Build Configuration" --cancel-button "Exit" --ok-button "Select" \
 		--menu "Select a setting to configure:" 16 70 6 \
 		"1" "Hardware Model:       [${MODEL}]" \
-		"2" "OpenMediaVault 7:     [${ENABLE_OMV}]" \
+		"2" "OpenMediaVault 8:     [${ENABLE_OMV}]" \
 		"3" "System Hostname:      [${HOSTNAME}]" \
 		"4" "Network Mode:         [${ETH0_MODE}]" \
 		"5" "Save Configuration & Exit" \
@@ -52,8 +52,8 @@ while true; do
 			[ -n "${M}" ] && MODEL="${M}"
 			;;
 		2)
-			if "${TUI_BIN}" --title "OpenMediaVault 7" --yes-button "Enable" --no-button "Disable" \
-				--yesno "Include OpenMediaVault 7 (Sandworm)?" 8 55; then
+			if "${TUI_BIN}" --title "OpenMediaVault 8" --yes-button "Enable" --no-button "Disable" \
+				--yesno "Include OpenMediaVault 8 (Synchrony)?" 8 55; then
 				ENABLE_OMV="true"
 			else
 				ENABLE_OMV="false"
