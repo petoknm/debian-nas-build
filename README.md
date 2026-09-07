@@ -1,6 +1,6 @@
 # Debian NAS Build for Zyxel Devices
 
-This project builds customized, bootable **Debian 12 (Bookworm)** disk images with **OpenMediaVault 8 (Synchrony)** for Zyxel NAS hardware, featuring modern Linux kernels (6.12.x) and native systemd support.
+This project builds customized, bootable **Debian 13 (Trixie)** disk images with **OpenMediaVault 8 (Synchrony)** for Zyxel NAS hardware, featuring modern Linux kernels (6.12.x) and native systemd support.
 
 ---
 
@@ -67,7 +67,7 @@ make flash DISK=/dev/sdX
 | `make` *(or `make all`)* | Full automated build from scratch (runs stages 01 through 05) |
 | `make menuconfig` | Interactive Whiptail TUI to configure model, OMV, and network |
 | `make image` | Fast rebuild of the USB disk image from existing `armhf/` (~30s) |
-| `make bootstrap` | Stage 1: Run Debian 12 (Bookworm) debootstrap & base packages |
+| `make bootstrap` | Stage 1: Run Debian 13 (Trixie) debootstrap & base packages |
 | `make firmware` | Stage 2: Extract Zyxel vendor hardware tools from firmware |
 | `make salt-pkg` | Build or fetch standalone 32-bit `salt-minion` deb for armhf |
 | `make omv` | Stage 3: Install & configure OpenMediaVault with ARM tuning |
@@ -82,13 +82,13 @@ make flash DISK=/dev/sdX
 **Customizing Options without TUI**:
 ```bash
 make MODEL=nas540           # Target a different hardware model (nas540, nas520, nas326)
-make ENABLE_OMV=false       # Build minimal Debian 12 without OpenMediaVault
+make ENABLE_OMV=false       # Build minimal Debian 13 without OpenMediaVault
 make RUNTIME=docker         # Force Docker instead of Podman
 ```
 
 The generated disk image is saved under `images/`:
 ```
-images/debian-nas-bookworm-YY.DDD-armhf.img.zst
+images/debian-nas-trixie-YY.DDD-armhf.img.zst
 ```
 
 ---
@@ -104,7 +104,7 @@ The project maintains a strict separation between build-time tools and runtime N
 - **`overlay/` (Runtime NAS Files)**:
   Target root filesystem overlay installed onto the Debian image. Contains native systemd unit definitions (`zy-button.service`, `zy-fan.service`, `zy-hdd-pm.service`, `zy-led.service`, `zy-poweroff.service`, `zy-ready.service`), hardware control scripts, boot files, and Zyxel wrapper binaries. All files are tracked transparently in Git with no opaque binary archive blobs.
 - **`armhf/`**:
-  The active Debian 12 armhf debootstrap tree. The project strictly preserves Debian 12 merged-usr compatibility (`/lib -> usr/lib`, `/sbin -> usr/sbin`, `/bin -> usr/bin`).
+  The active Debian 13 armhf debootstrap tree. The project strictly preserves Debian merged-usr compatibility (`/lib -> usr/lib`, `/sbin -> usr/sbin`, `/bin -> usr/bin`).
 
 ---
 
@@ -132,7 +132,7 @@ make flash DISK=/dev/sdX
 Or manually with `dd` and `zstd`:
 ```bash
 # Decompress and flash (replace /dev/sdX with your actual USB drive)
-zstd -dc images/debian-nas-bookworm-*.img.zst | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
+zstd -dc images/debian-nas-trixie-*.img.zst | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
 ```
 
 ---
@@ -152,7 +152,7 @@ zstd -dc images/debian-nas-bookworm-*.img.zst | sudo dd of=/dev/sdX bs=4M status
    - The NAS will **beep the buzzer twice** and automatically **reboot**.
 4. **Second Boot (Native Linux 6.12):**
    - Barebox directly boots Linux 6.12 from NAND and mounts the USB drive as root (`/`).
-   - The system boots into native Debian 12 with full systemd, networking, and OpenMediaVault 7 services.
+   - The system boots into native Debian 13 with full systemd, networking, and OpenMediaVault 8 services.
 
 ---
 
@@ -231,7 +231,7 @@ If your NAS already has hard drives with an existing Linux software RAID (RAID 1
 To get the smoothest performance out of the LS1024A / Cortex-A9 hardware:
 
 1. **Dashboard Widgets**: In the OMV WebGUI, click the **Settings (gear/sliders)** icon at the top right of the **Dashboard**. Disable heavy, high-frequency widgets like *CPU graphs*, *RRD graphs*, and *Memory*. Keep only *System Information* and *File Systems*.
-2. **PHP-FPM Pool**: Already tuned to `pm.max_children = 4` in `/etc/php/8.2/fpm/pool.d/openmediavault-webgui.conf` to avoid CPU context-switching starvation.
+2. **PHP-FPM Pool**: Already tuned to `pm.max_children = 4` in `/etc/php/*/fpm/pool.d/openmediavault-webgui.conf` (PHP 8.4) to avoid CPU context-switching starvation.
 3. **Frontend Polling**: The frontend background task polling interval is pre-set to 2500ms (every 2.5s instead of 0.5s).
 
 ### Network Transfer Tuning (NFS vs SMB)

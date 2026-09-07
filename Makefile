@@ -15,6 +15,8 @@ ENABLE_OMV   ?= true
 HOSTNAME     ?= debian-nas
 DISK         ?=
 ZSTD_LEVEL   ?= 9
+DEBIAN_SUITE ?= trixie
+DEBIAN_VER   ?= 13
 MODEL        := $(strip $(subst ",,$(MODEL)))
 ENABLE_OMV   := $(strip $(subst ",,$(ENABLE_OMV)))
 HOSTNAME     := $(strip $(subst ",,$(HOSTNAME)))
@@ -116,14 +118,14 @@ full: bootstrap firmware omv kernel diskimage
 
 bootstrap: armhf/bin/bash
 armhf/bin/bash:
-	@echo "=== [Stage 1] Debian 12 Bootstrap ==="
+	@echo "=== [Stage 1] Debian $(DEBIAN_VER) ($(DEBIAN_SUITE)) Bootstrap ==="
 	mkdir -p $(R)
-	debootstrap --arch=armhf --foreign bookworm $(R) http://deb.debian.org/debian
+	debootstrap --arch=armhf --foreign $(DEBIAN_SUITE) $(R) http://deb.debian.org/debian
 	cp -p /usr/bin/qemu-arm-static $(R)/usr/bin/ 2>/dev/null || true
 	chroot $(R) /debootstrap/debootstrap --second-stage
-	printf 'deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware\n' > $(R)/etc/apt/sources.list
-	printf 'deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware\n' >> $(R)/etc/apt/sources.list
-	printf 'deb http://security.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware\n' >> $(R)/etc/apt/sources.list
+	printf 'deb http://deb.debian.org/debian $(DEBIAN_SUITE) main contrib non-free non-free-firmware\n' > $(R)/etc/apt/sources.list
+	printf 'deb http://deb.debian.org/debian $(DEBIAN_SUITE)-updates main contrib non-free non-free-firmware\n' >> $(R)/etc/apt/sources.list
+	printf 'deb http://security.debian.org/debian-security $(DEBIAN_SUITE)-security main contrib non-free non-free-firmware\n' >> $(R)/etc/apt/sources.list
 	echo "$(HOSTNAME)" > $(R)/etc/hostname
 	printf '127.0.0.1\tlocalhost\n::1\t\tlocalhost ip6-localhost ip6-loopback\nfe00::0\t\tip6-localnet\nff00::0\t\tip6-mcastprefix\nff02::1\t\tip6-allnodes\nff02::2\t\tip6-allrouters\n127.0.1.1\t$(HOSTNAME)\n' > $(R)/etc/hosts
 	printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > $(R)/etc/resolv.conf
@@ -144,7 +146,7 @@ armhf/bin/bash:
 		fake-hwclock i2c-tools mtd-utils watchdog dphys-swapfile \
 		screen strace tcpdump telnet traceroute u-boot-tools usbutils usb-modeswitch \
 		vim nano p7zip-full zip unzip xz-utils bzip2 less cifs-utils smbclient \
-		ethtool hdparm sdparm at anacron cron logrotate bsd-mailx postfix wsdd fail2ban \
+		ethtool hdparm sdparm at anacron cron logrotate bsd-mailx postfix wsdd2 fail2ban \
 		bc dc busybox-static dnsmasq-base bind9-dnsutils eject gdbserver gettext-base ifupdown initramfs-tools \
 		inputattach iptables iputils-arping iputils-ping iputils-tracepath isc-dhcp-client kbd linux-base lockfile-progs \
 		lshw lsof man-db netcat-openbsd nfs-common pciutils procps psmisc rdate squashfs-tools ssl-cert fuse3 systemd-resolved
@@ -306,7 +308,7 @@ diskimage:
 	rm -rf $(R)/tmp/* $(R)/var/tmp/*
 	chroot $(R) apt-get clean 2>/dev/null || true
 	for i in $$(seq 0 7); do [ -e /dev/loop$$i ] || mknod /dev/loop$$i b 7 $$i 2>/dev/null || true; done
-	IMG="images/debian-nas-bookworm-$$(date +%y.%j)-armhf.img"
+	IMG="images/debian-nas-$(DEBIAN_SUITE)-$$(date +%y.%j)-armhf.img"
 	rm -f "$$IMG" "$${IMG}.zst"
 	ROOT_M=$$(( $$(du -sk $(R) | cut -f1) / 1024 + 512 ))
 	dd if=/dev/zero of="$$IMG" bs=1M count=1 seek=$$(( 97 + ROOT_M + 32 )) status=none
