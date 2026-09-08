@@ -77,7 +77,7 @@ php-pam-pkg: builder-image prep ## Build standalone armhf php-pam deb
 omv: builder-image prep       ## Stage 3: Install & configure OpenMediaVault inside container
 kernel: builder-image prep    ## Stage 4: Deploy Linux 6.12 kernel & NAND flashers inside container
 
-all full diskimage bootstrap firmware omv kernel salt-pkg php-pam-pkg:
+all full diskimage bootstrap firmware omv kernel image salt-pkg php-pam-pkg:
 	@$(DOCKER_CMD) $@
 
 shell: builder-image ## Drop into an interactive container shell
@@ -309,16 +309,42 @@ kernel:
 	[ -e $(BOOTDIR)/uImage ] && cp -p $(BOOTDIR)/uImage kernel/ 2>/dev/null || true
 	cp -a overlay/* $(R)/ 2>/dev/null || true
 	[ -d overlay/boot ] && cp -a overlay/boot/* $(BOOTDIR)/ 2>/dev/null || true
-	chmod +x $(R)/usr/local/bin/* $(R)/usr/local/sbin/* $(R)/debinit.sh 2>/dev/null || true
-	chroot $(R) systemctl enable zy-ready zy-stop zy-fanctrl.timer 2>/dev/null || true
+	chmod +x $(R)/usr/local/bin/* $(R)/usr/local/sbin/* $(R)/debinit.sh $(R)/etc/preinit 2>/dev/null || true
+	for b in setLED buzzerc rtcAccess mrd_mac mrd_model info_printenv info_setenv bareboxenv; do \
+		[ -f $(R)/usr/local/bin/$$b ] && ln -sf /usr/local/bin/$$b $(R)/usr/sbin/$$b 2>/dev/null || true; \
+		[ -f $(R)/firmware/bin/$$b ] && ln -sf /firmware/bin/$$b $(R)/usr/sbin/$$b 2>/dev/null || true; \
+		[ -f $(R)/firmware/sbin/$$b ] && ln -sf /firmware/sbin/$$b $(R)/usr/sbin/$$b 2>/dev/null || true; \
+	done
+	mkdir -p $(R)/etc/systemd/system/basic.target.wants \
+	         $(R)/etc/systemd/system/multi-user.target.wants \
+	         $(R)/etc/systemd/system/timers.target.wants \
+	         $(R)/etc/systemd/system/shutdown.target.wants \
+	         $(R)/etc/systemd/system/reboot.target.wants \
+	         $(R)/etc/systemd/system/poweroff.target.wants \
+	         $(R)/etc/systemd/system/halt.target.wants \
+	         $(R)/etc/systemd/system.conf.d
+	ln -sf /etc/systemd/system/zy-hw-init.service $(R)/etc/systemd/system/basic.target.wants/zy-hw-init.service
+	ln -sf /etc/systemd/system/zy-ready.service $(R)/etc/systemd/system/multi-user.target.wants/zy-ready.service
+	ln -sf /etc/systemd/system/zy-fanctrl.timer $(R)/etc/systemd/system/timers.target.wants/zy-fanctrl.timer
+	for t in shutdown reboot poweroff halt; do \
+		ln -sf /etc/systemd/system/zy-stop.service $(R)/etc/systemd/system/$$t.target.wants/zy-stop.service; \
+	done
+	rm -f $(R)/etc/systemd/system/*.target.wants/watchdog.service $(R)/etc/systemd/system/*.target.wants/wd_keepalive.service 2>/dev/null || true
+	ln -sf /dev/null $(R)/etc/systemd/system/watchdog.service 2>/dev/null || true
+	ln -sf /dev/null $(R)/etc/systemd/system/wd_keepalive.service 2>/dev/null || true
+	printf '[Manager]\nRuntimeWatchdogSec=off\n' > $(R)/etc/systemd/system.conf.d/openmediavault-watchdog.conf
+	if [ -f $(R)/etc/default/openmediavault ]; then \
+		sed -i 's/^OMV_WATCHDOG_ENABLED=.*/OMV_WATCHDOG_ENABLED="NO"/' $(R)/etc/default/openmediavault; \
+		grep -q '^OMV_WATCHDOG_ENABLED=' $(R)/etc/default/openmediavault || echo 'OMV_WATCHDOG_ENABLED="NO"' >> $(R)/etc/default/openmediavault; \
+	fi
 
 image: diskimage
-diskimage:
+diskimage: kernel
 	@echo "=== [Stage 5] Generating Disk Image ==="
 	mkdir -p images mnt_tmp
 	echo "$(HOSTNAME)" > $(R)/etc/hostname
 	sed -i -E 's/127\.0\.1\.1.*/127.0.1.1\t$(HOSTNAME)/' $(R)/etc/hosts 2>/dev/null || true
-	chmod +x $(R)/usr/local/bin/* $(R)/debinit.sh 2>/dev/null || true
+	chmod +x $(R)/usr/local/bin/* $(R)/debinit.sh $(R)/etc/preinit 2>/dev/null || true
 	rm -f $(R)/root/qemu_*.core 2>/dev/null || true
 	rm -rf $(R)/tmp/* $(R)/var/tmp/*
 	chroot $(R) apt-get clean 2>/dev/null || true
@@ -327,8 +353,11 @@ diskimage:
 	rm -f "$$IMG" "$${IMG}.zst"
 	ROOT_M=$$(( $$(du -sk $(R) | cut -f1) / 1024 + 512 ))
 	dd if=/dev/zero of="$$IMG" bs=1M count=1 seek=$$(( 97 + ROOT_M + 32 )) status=none
-	sgdisk -o -n 1:2048:+95M -c 1:TC_BOOT -t 1:0700 -u 1:54cdf5da-deb1-b007-a694-32880502ef34 \
-	          -n 2:0:+$${ROOT_M}M -c 2:TC_ROOT -t 2:8300 -u 2:54cdf5da-deb1-f007-a694-32880502ef34 "$$IMG" > /dev/null
+	sgdisk -o \
+	  -n 1:2048:196607 -c 1:TC_BOOT -t 1:0700 -u 1:54cdf5da-deb1-b007-a694-32880502ef34 \
+	  -n 2:196608:$$(( 196608 + ROOT_M * 2048 - 1 )) -c 2:TC_ROOT -t 2:8300 -u 2:54cdf5da-deb1-f007-a694-32880502ef34 \
+	  "$$IMG" > /dev/null
+	ROOT_M=$$ROOT_M python3 -c "import os, struct; rm = int(os.environ['ROOT_M']) * 2048; f = open('$$IMG', 'r+b'); f.seek(440); m = bytearray(72); struct.pack_into('<I', m, 0, 0x54cdf5da); struct.pack_into('<BBBBBBBBII', m, 6, 0x80, 0x20, 0x21, 0x00, 0x0c, 0xff, 0xff, 0xff, 2048, 194560); struct.pack_into('<BBBBBBBBII', m, 22, 0x00, 0xff, 0xff, 0xff, 0x83, 0xff, 0xff, 0xff, 196608, rm); struct.pack_into('<BBBBBBBBII', m, 38, 0x00, 0x01, 0x01, 0x00, 0xee, 0xff, 0xff, 0xff, 1, 2047); m[70] = 0x55; m[71] = 0xaa; f.write(m); f.close()"
 	BDEV=$$(losetup -o 1M --sizelimit 95M -f --show "$$IMG")
 	RDEV=$$(losetup -o 96M --sizelimit $${ROOT_M}M -f --show "$$IMG")
 	trap 'umount -l mnt_tmp/boot mnt_tmp 2>/dev/null || true; losetup -d "$$BDEV" "$$RDEV" 2>/dev/null || true; rm -rf mnt_tmp' EXIT

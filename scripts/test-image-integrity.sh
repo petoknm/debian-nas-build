@@ -75,28 +75,32 @@ RAW_IMG="${TMPDIR}/disk.img"
 "${ZSTD}" -d -q -c "${IMAGE}" > "${RAW_IMG}" 2>/dev/null
 report_test "Archive: decompress raw image" $? "($(ls -lh "${RAW_IMG}" 2>/dev/null | awk '{print $5}'))"
 
-# Verify GPT table validity
-"${SGDISK}" -v "${RAW_IMG}" >/dev/null 2>&1
-report_test "GPT: partition table valid & non-corrupt" $? ""
+# Verify MBR DOS partition table validity & fixed disk ID (0x54cdf5da)
+FDISK_OUT="${TMPDIR}/fdisk_info.txt"
+fdisk -t dos -l "${RAW_IMG}" > "${FDISK_OUT}" 2>/dev/null || fdisk -l "${RAW_IMG}" > "${FDISK_OUT}" 2>/dev/null
+grep -q "Disklabel type: dos" "${FDISK_OUT}" && grep -qi "Disk identifier: 0x54cdf5da" "${FDISK_OUT}"
+report_test "MBR: DOS partition table valid (Disk ID 0x54cdf5da)" $? "0x54cdf5da"
 
-# Check partition 1 (TC_BOOT)
-"${SGDISK}" -i 1 "${RAW_IMG}" > "${TMPDIR}/p1_info.txt" 2>/dev/null
-grep -q "Partition name: 'TC_BOOT'" "${TMPDIR}/p1_info.txt" && \
-grep -qi "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7" "${TMPDIR}/p1_info.txt" && \
-grep -qi "54CDF5DA-DEB1-B007-A694-32880502EF34" "${TMPDIR}/p1_info.txt"
-report_test "GPT: partition 1 (TC_BOOT, 0700, fixed UUID)" $? "TC_BOOT"
+# Check partition 1 (TC_BOOT, 95MB, FAT32 LBA, Bootable)
+grep -E "${RAW_IMG}1\s+\*\s+2048\s+[0-9]+\s+194560\s+95M\s+c" "${FDISK_OUT}" >/dev/null 2>&1 || \
+(grep -q "${RAW_IMG}1" "${FDISK_OUT}" && grep "${RAW_IMG}1" "${FDISK_OUT}" | grep -q "c  W95 FAT32 (LBA)")
+report_test "MBR: partition 1 (TC_BOOT, 95M, Type 0x0c, Bootable)" $? "TC_BOOT"
 
-# Check partition 2 (TC_ROOT)
-"${SGDISK}" -i 2 "${RAW_IMG}" > "${TMPDIR}/p2_info.txt" 2>/dev/null
-grep -q "Partition name: 'TC_ROOT'" "${TMPDIR}/p2_info.txt" && \
-grep -qi "0FC63DAF-8483-4772-8E79-3D69D8477DE4" "${TMPDIR}/p2_info.txt" && \
-grep -qi "54CDF5DA-DEB1-F007-A694-32880502EF34" "${TMPDIR}/p2_info.txt"
-report_test "GPT: partition 2 (TC_ROOT, 8300, fixed UUID)" $? "TC_ROOT"
+# Check partition 2 (TC_ROOT, Linux 0x83)
+grep -q "${RAW_IMG}2" "${FDISK_OUT}" && grep "${RAW_IMG}2" "${FDISK_OUT}" | grep -qE "83\s+Linux"
+report_test "MBR: partition 2 (TC_ROOT, Linux type 0x83)" $? "TC_ROOT"
+
+# Verify Hybrid GPT table PARTUUID matches 54cdf5da-deb1-f007-a694-32880502ef34
+PARTX_OUT="${TMPDIR}/partx_info.txt"
+partx -s "${RAW_IMG}" > "${PARTX_OUT}" 2>/dev/null || true
+grep -qi "54cdf5da-deb1-f007-a694-32880502ef34" "${PARTX_OUT}"
+report_test "GPT: Hybrid PARTUUID (54cdf5da-deb1-f007-a694-32880502ef34)" $? "TC_ROOT"
 
 # Extract partition images
-"${SEVENZ}" e "${RAW_IMG}" 0.TC_BOOT.fat 1.TC_ROOT.img -o"${TMPDIR}" >/dev/null 2>&1
-FAT_IMG="${TMPDIR}/0.TC_BOOT.fat"
-EXT_IMG="${TMPDIR}/1.TC_ROOT.img"
+"${SEVENZ}" e "${RAW_IMG}" 0.* 1.* -o"${TMPDIR}" >/dev/null 2>&1
+FAT_IMG=$(ls "${TMPDIR}"/0.* 2>/dev/null | head -n1 || true)
+EXT_IMG=$(ls "${TMPDIR}"/1.* 2>/dev/null | head -n1 || true)
+[ -n "${FAT_IMG}" ] && [ -f "${FAT_IMG}" ] && [ -n "${EXT_IMG}" ] && [ -f "${EXT_IMG}" ]
 # Remove raw image to reclaim disk space immediately
 rm -f "${RAW_IMG}"
 

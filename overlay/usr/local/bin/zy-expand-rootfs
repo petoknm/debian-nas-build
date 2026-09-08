@@ -56,38 +56,36 @@ fi
 
 echo "Parent disk: ${DISK_DEV}, Partition number: ${PART_NUM}"
 
-# 3. Relocate secondary/backup GPT header to the physical end of disk
-echo "Relocating backup GPT header to end of disk..."
-if which sgdisk >/dev/null 2>&1; then
-  sgdisk -e "${DISK_DEV}" >/dev/null 2>&1 || true
+# 3. Detect partition table type and expand partition
+PT_TYPE=$(blkid -s PTTYPE -o value "${DISK_DEV}" 2>/dev/null || fdisk -l "${DISK_DEV}" 2>/dev/null | awk '/Disklabel type:/ {print $3}' || true)
+echo "Detected partition table format: ${PT_TYPE:-unknown}"
+
+if [ "${PT_TYPE}" = "gpt" ]; then
+  echo "Relocating backup GPT header to end of disk..."
+  which sgdisk >/dev/null 2>&1 && sgdisk -e "${DISK_DEV}" >/dev/null 2>&1 || true
+  echo "Expanding GPT partition ${PART_NUM}..."
+  PART_UUID="54cdf5da-deb1-f007-a694-32880502ef34"
+  if which sgdisk >/dev/null 2>&1; then
+    sgdisk -d "${PART_NUM}" \
+           -n "${PART_NUM}:0:0" \
+           -c "${PART_NUM}:TC_ROOT" \
+           -t "${PART_NUM}:8300" \
+           -u "${PART_NUM}:${PART_UUID}" \
+           "${DISK_DEV}" >/dev/null 2>&1 || true
+  elif which parted >/dev/null 2>&1; then
+    parted -s "${DISK_DEV}" resizepart "${PART_NUM}" 100% >/dev/null 2>&1 || true
+  fi
+else
+  echo "Expanding MBR (DOS) partition ${PART_NUM} to 100%..."
+  if which parted >/dev/null 2>&1; then
+    parted -s "${DISK_DEV}" resizepart "${PART_NUM}" 100% >/dev/null 2>&1 || true
+  elif which sfdisk >/dev/null 2>&1; then
+    echo ", +" | sfdisk -N "${PART_NUM}" "${DISK_DEV}" --no-reread >/dev/null 2>&1 || true
+  fi
 fi
 
-# 4. Expand partition entry in GPT table
-echo "Expanding partition ${PART_NUM} to 100% in GPT..."
-PART_UUID="54cdf5da-deb1-f007-a694-32880502ef34"
-if which sgdisk >/dev/null 2>&1; then
-  # Recreate partition entry starting at same offset spanning to end of disk
-  sgdisk -d "${PART_NUM}" \
-         -n "${PART_NUM}:0:0" \
-         -c "${PART_NUM}:TC_ROOT" \
-         -t "${PART_NUM}:8300" \
-         -u "${PART_NUM}:${PART_UUID}" \
-         "${DISK_DEV}" >/dev/null 2>&1 || true
-elif which parted >/dev/null 2>&1; then
-  parted -s "${DISK_DEV}" resizepart "${PART_NUM}" 100% >/dev/null 2>&1 || true
-fi
-
-# 5. Inform kernel of new partition boundary
+# 4. Inform kernel of new partition boundary
 echo "Informing kernel of new partition boundary..."
-NEW_SECTORS=""
-if which sgdisk >/dev/null 2>&1; then
-  NEW_SECTORS="$(sgdisk -i "${PART_NUM}" "${DISK_DEV}" 2>/dev/null | grep -i "Partition size:" | awk '{print $3}' || true)"
-fi
-
-if [ -n "${NEW_SECTORS}" ] && which resizepart >/dev/null 2>&1; then
-  resizepart "${DISK_DEV}" "${PART_NUM}" "${NEW_SECTORS}" >/dev/null 2>&1 || true
-fi
-
 which partx >/dev/null 2>&1 && partx -u "${DISK_DEV}" >/dev/null 2>&1 || true
 which partprobe >/dev/null 2>&1 && partprobe "${DISK_DEV}" >/dev/null 2>&1 || true
 
