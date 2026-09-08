@@ -160,7 +160,7 @@ ROOT_LIST="${TMPDIR}/root_files.txt"
 
 # Verify first-boot and flasher scripts
 SCRIPTS_OK=0
-for sc in debinit.sh usr/local/bin/zy-bb-env-and-kernel2-write usr/local/bin/zy-kernel2-write usr/local/bin/zy-expand-rootfs usr/local/bin/zy-ready; do
+for sc in etc/preinit debinit.sh usr/local/bin/zy-bb-env-and-kernel2-write usr/local/bin/zy-kernel2-write usr/local/bin/zy-expand-rootfs usr/local/bin/zy-ready; do
 	grep -q "${sc}" "${ROOT_LIST}" || SCRIPTS_OK=1
 done
 report_test "Init: First-boot flasher & expand scripts present" $SCRIPTS_OK ""
@@ -236,6 +236,10 @@ for unit in etc/systemd/system/multi-user.target.wants/openmediavault-engined.se
 	grep -q "${unit}" "${ROOT_LIST}" || UNITS_OK=1
 done
 report_test "Services: systemd multi-user units (omv-engined, nginx, ssh)" $UNITS_OK ""
+
+# Universal PID 1 compatibility shim & symlink
+grep -q "etc/preinit" "${ROOT_LIST}" && grep -qE "[[:space:]]init$" "${ROOT_LIST}"
+report_test "Compatibility: Universal PID 1 preinit shim & init symlink" $? ""
 
 # ARM Performance Tuning
 ARM_TUNED=1

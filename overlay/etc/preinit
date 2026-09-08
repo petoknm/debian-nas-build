@@ -1,0 +1,17 @@
+#!/bin/sh
+# /etc/preinit - Compatibility shim for bootloaders passing init=/etc/preinit
+
+# Disarm MCU hardware watchdog immediately
+[ -e /proc/mcu_wdt ] && echo 1 > /proc/mcu_wdt
+
+echo "=== [preinit] Disarmed MCU watchdog, starting /sbin/init ===" > /dev/console 2>/dev/null || true
+
+if [ -x /sbin/init ]; then
+    exec /sbin/init "$@"
+elif [ -x /lib/systemd/systemd ]; then
+    exec /lib/systemd/systemd "$@"
+elif [ -x /usr/lib/systemd/systemd ]; then
+    exec /usr/lib/systemd/systemd "$@"
+else
+    exec /bin/sh
+fi
