@@ -30,4 +30,7 @@ echo "Flashing $KRN_IMG to /dev/mtd$KRN_MTD ($TARGET_NAME)..."
 /sbin/nandwrite -a -p /dev/mtd$KRN_MTD "$KRN_IMG"
 
 echo "Setting next_bootfrom=$TARGET_SLOT..."
-/firmware/sbin/info_setenv next_bootfrom $TARGET_SLOT || /sbin/fw_setenv next_bootfrom $TARGET_SLOT || true
+SETENV_BIN=$(command -v info_setenv || command -v /firmware/sbin/info_setenv || command -v /usr/local/bin/info_setenv || command -v /usr/sbin/info_setenv || command -v fw_setenv || true)
+if [ -n "$SETENV_BIN" ]; then
+    "$SETENV_BIN" next_bootfrom $TARGET_SLOT 2>/dev/null || true
+fi
