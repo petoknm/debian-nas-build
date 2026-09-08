@@ -26,6 +26,18 @@ if [ ! -e /etc/.zy-first.done ]; then
     omv-salt stage run prepare 2>/dev/null || true
   fi
 
+  # AUTO-SYNC KERNEL: If booted with an older NAND kernel lacking matching modules
+  if [ ! -d "/lib/modules/$(uname -r)" ] && [ -x /usr/local/bin/zy-kernel2-write ] && [ -f /boot/uImage ]; then
+    /usr/local/bin/zy-kernel2-write >/dev/null 2>&1 || true
+    BUZZER_BIN=$(command -v buzzerc || command -v /firmware/bin/buzzerc || command -v /usr/local/bin/buzzerc || command -v /usr/sbin/buzzerc || true)
+    [ -n "$BUZZER_BIN" ] && "$BUZZER_BIN" -t 2 2>/dev/null || true
+    touch /etc/.zy-first.done
+    sync
+    sleep 2
+    reboot -f || true
+    exit 0
+  fi
+
   touch /etc/.zy-first.done
 fi
 
@@ -51,7 +63,11 @@ if [ -e /etc/systemd/resolved.conf -a "X${defns}" != "X" ]; then
   fi
 fi
 
-/sbin/buzzerc -t 1
-/sbin/setLED SYS OFF
+BUZZER_BIN=$(command -v buzzerc || command -v /firmware/bin/buzzerc || command -v /usr/local/bin/buzzerc || command -v /sbin/buzzerc || true)
+[ -n "$BUZZER_BIN" ] && "$BUZZER_BIN" -t 1 2>/dev/null || true
+
+LED_BIN=$(command -v setLED || command -v /firmware/bin/setLED || command -v /usr/local/bin/setLED || command -v /sbin/setLED || true)
+[ -n "$LED_BIN" ] && "$LED_BIN" SYS OFF 2>/dev/null || true
 
 touch /tmp/.dru-boot.done
+
