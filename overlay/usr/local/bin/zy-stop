@@ -1,9 +1,12 @@
 #!/bin/sh
 
-/sbin/setLED SYS GREEN BLINK
+LED_BIN=$(command -v setLED || command -v /firmware/bin/setLED || command -v /usr/local/bin/setLED || command -v /sbin/setLED || true)
+[ -n "$LED_BIN" ] && "$LED_BIN" SYS GREEN BLINK 2>/dev/null || true
 
 # clear the AF flag of rtc
-/sbin/rtcAccess clearAF
+RTC_BIN=$(command -v rtcAccess || command -v /firmware/sbin/rtcAccess || command -v /usr/local/bin/rtcAccess || command -v /sbin/rtcAccess || true)
+[ -n "$RTC_BIN" ] && "$RTC_BIN" clearAF 2>/dev/null || true
 
 rm -f /tmp/.dru-boot.done
+exit 0
 

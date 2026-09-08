@@ -237,9 +237,33 @@ for unit in etc/systemd/system/multi-user.target.wants/openmediavault-engined.se
 done
 report_test "Services: systemd multi-user units (omv-engined, nginx, ssh)" $UNITS_OK ""
 
+# Enabled hardware and Comcerto systemd units
+ZY_UNITS_OK=0
+for unit in etc/systemd/system/basic.target.wants/zy-hw-init.service \
+            etc/systemd/system/multi-user.target.wants/zy-ready.service \
+            etc/systemd/system/timers.target.wants/zy-fanctrl.timer \
+            etc/systemd/system/shutdown.target.wants/zy-stop.service; do
+	grep -q "${unit}" "${ROOT_LIST}" || ZY_UNITS_OK=1
+done
+report_test "Services: Comcerto hardware units (zy-hw-init, zy-ready, fanctrl, zy-stop)" $ZY_UNITS_OK ""
+
 # Universal PID 1 compatibility shim & symlink
 grep -q "etc/preinit" "${ROOT_LIST}" && grep -qE "[[:space:]]init$" "${ROOT_LIST}"
 report_test "Compatibility: Universal PID 1 preinit shim & init symlink" $? ""
+
+# Comcerto & PFE module configurations
+CONF_OK=0
+for conf in etc/modules-load.d/comcerto.conf etc/modprobe.d/pfe.conf etc/systemd/network/99-default.link; do
+	grep -q "${conf}" "${ROOT_LIST}" || CONF_OK=1
+done
+report_test "Drivers: Comcerto PFE module configs & persistent link policy" $CONF_OK ""
+
+# Vendor hardware tool symlinks in /usr/sbin
+SBIN_OK=0
+for sbin in usr/sbin/setLED usr/sbin/buzzerc usr/sbin/rtcAccess usr/sbin/mrd_mac; do
+	grep -q "${sbin}" "${ROOT_LIST}" || SBIN_OK=1
+done
+report_test "Hardware: /usr/sbin vendor symlinks (setLED, buzzerc, rtcAccess, mrd_mac)" $SBIN_OK ""
 
 # Watchdog Disarming (Prevent premature hardware resets)
 WDT_SAFE=1

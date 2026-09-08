@@ -1,0 +1,15 @@
+[Unit]
+Description=Zyxel Comcerto Hardware & Network Initialization (PFE & MCU Watchdog)
+DefaultDependencies=no
+Before=network-pre.target systemd-networkd.service networking.service ifupdown-pre.service
+Wants=network-pre.target
+After=systemd-modules-load.service local-fs.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/zy-hw-init
+RemainAfterExit=yes
+
+[Install]
+WantedBy=basic.target
