@@ -241,6 +241,17 @@ report_test "Services: systemd multi-user units (omv-engined, nginx, ssh)" $UNIT
 grep -q "etc/preinit" "${ROOT_LIST}" && grep -qE "[[:space:]]init$" "${ROOT_LIST}"
 report_test "Compatibility: Universal PID 1 preinit shim & init symlink" $? ""
 
+# Watchdog Disarming (Prevent premature hardware resets)
+WDT_SAFE=1
+"${SEVENZ}" e "${EXT_IMG}" etc/systemd/system.conf.d/openmediavault-watchdog.conf -so > "${TMPDIR}/wdt.conf" 2>/dev/null || true
+"${SEVENZ}" e "${EXT_IMG}" etc/default/openmediavault -so > "${TMPDIR}/omv_def" 2>/dev/null || true
+if grep -q "RuntimeWatchdogSec=off" "${TMPDIR}/wdt.conf" 2>/dev/null && \
+   grep -q 'OMV_WATCHDOG_ENABLED="NO"' "${TMPDIR}/omv_def" 2>/dev/null; then
+	WDT_SAFE=0
+fi
+[ $WDT_SAFE -eq 0 ]
+report_test "Watchdog: OMV RuntimeWatchdogSec=off & OMV_WATCHDOG_ENABLED=NO" $? ""
+
 # ARM Performance Tuning
 ARM_TUNED=1
 "${SEVENZ}" e "${EXT_IMG}" etc/php/8.4/fpm/pool.d/openmediavault-webgui.conf -so > "${TMPDIR}/fpm.conf" 2>/dev/null || true

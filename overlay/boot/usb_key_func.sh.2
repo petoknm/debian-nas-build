@@ -18,6 +18,8 @@
 #
 # ============================================================================
 
+[ -e /proc/mcu_wdt ] && echo 1 > /proc/mcu_wdt
+
 pivotMode=false
 pkd=`dirname $0`
 cd $pkd ; pkd=`pwd` ; cd - > /dev/null

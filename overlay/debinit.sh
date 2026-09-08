@@ -1,4 +1,5 @@
 #!/bin/sh
+[ -e /proc/mcu_wdt ] && echo 1 > /proc/mcu_wdt
 [ -e /proc/mounts ] && ln -sf /proc/mounts /etc/mtab
 
 # Mount essential kernel virtual filesystems
