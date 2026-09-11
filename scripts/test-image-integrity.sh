@@ -189,6 +189,16 @@ report_test "Hardware: MTD flashers & vendor controls (info_setenv, buzzerc)" $T
 grep -q "usr/lib/modules/6.12.95+nas5xx/modules.dep" "${ROOT_LIST}"
 report_test "Kernel: Linux 6.12 kernel modules tree populated" $? ""
 
+# Security: verify zero embedded SSH host/user private keys
+EMBEDDED_KEYS=0
+grep -qE "etc/ssh/ssh_host_|root/\.ssh" "${ROOT_LIST}" && EMBEDDED_KEYS=1 || true
+report_test "Security: zero embedded SSH host/user keys (first-boot generation)" $EMBEDDED_KEYS ""
+
+# Security: verify uninitialized machine-id for first-boot setup
+MACHINE_ID_SIZE=$("${SEVENZ}" l "${EXT_IMG}" | awk '$NF == "etc/machine-id" {print $4}' || true)
+[ "${MACHINE_ID_SIZE:-1}" -eq 0 ]
+report_test "Security: uninitialized machine-id for first-boot uniqueness" $? ""
+
 # ------------------------------------------------------------------------------
 # 4. OpenMediaVault 8 & SaltStack 32-bit Runtime
 # ------------------------------------------------------------------------------

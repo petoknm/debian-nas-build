@@ -67,6 +67,13 @@ fi
 /etc/init.d/networking start 2>/dev/null || true
 /etc/init.d/hostname.sh start 2>/dev/null || true
 /etc/init.d/resolvconf start 2>/dev/null || true
+
+# Generate fresh SSH host keys on first boot if missing
+if [ ! -f /etc/ssh/ssh_host_ed25519_key ] && [ ! -f /etc/ssh/ssh_host_rsa_key ]; then
+  echo "=== Generating fresh SSH host keys ==="
+  ssh-keygen -A 2>/dev/null || true
+fi
+
 /etc/init.d/ssh restart 2>/dev/null || /usr/sbin/sshd 2>/dev/null || true
 
 rm -f /run/nologin

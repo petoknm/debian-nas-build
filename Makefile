@@ -345,7 +345,10 @@ diskimage: kernel
 	echo "$(HOSTNAME)" > $(R)/etc/hostname
 	sed -i -E 's/127\.0\.1\.1.*/127.0.1.1\t$(HOSTNAME)/' $(R)/etc/hosts 2>/dev/null || true
 	chmod +x $(R)/usr/local/bin/* $(R)/debinit.sh $(R)/etc/preinit 2>/dev/null || true
-	rm -f $(R)/root/qemu_*.core 2>/dev/null || true
+	rm -f $(R)/root/qemu_*.core $(R)/etc/ssh/ssh_host_* 2>/dev/null || true
+	rm -rf $(R)/root/.ssh $(R)/home/*/.ssh 2>/dev/null || true
+	: > $(R)/etc/machine-id
+	rm -f $(R)/var/lib/dbus/machine-id 2>/dev/null || true
 	rm -rf $(R)/tmp/* $(R)/var/tmp/*
 	chroot $(R) apt-get clean 2>/dev/null || true
 	for i in $$(seq 0 7); do [ -e /dev/loop$$i ] || mknod /dev/loop$$i b 7 $$i 2>/dev/null || true; done
