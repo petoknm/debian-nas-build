@@ -74,6 +74,17 @@ if [ ! -f /etc/ssh/ssh_host_ed25519_key ] && [ ! -f /etc/ssh/ssh_host_rsa_key ];
   ssh-keygen -A 2>/dev/null || true
 fi
 
+# Generate root client SSH keypair on first boot if missing
+if [ ! -f /root/.ssh/id_ed25519 ] && [ ! -f /root/.ssh/id_rsa ]; then
+  echo "=== Generating fresh root SSH client keys ==="
+  mkdir -p /root/.ssh
+  chmod 700 /root/.ssh
+  ssh-keygen -t ed25519 -N "" -f /root/.ssh/id_ed25519 -C "root@$(hostname)" >/dev/null 2>&1 || true
+  ssh-keygen -t rsa -b 3072 -N "" -f /root/.ssh/id_rsa -C "root@$(hostname)" >/dev/null 2>&1 || true
+  chmod 600 /root/.ssh/id_* 2>/dev/null || true
+  chmod 644 /root/.ssh/*.pub 2>/dev/null || true
+fi
+
 /etc/init.d/ssh restart 2>/dev/null || /usr/sbin/sshd 2>/dev/null || true
 
 rm -f /run/nologin
