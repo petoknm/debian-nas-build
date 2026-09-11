@@ -60,7 +60,7 @@ echo "Parent disk: ${DISK_DEV}, Partition number: ${PART_NUM}"
 PT_TYPE=$(blkid -s PTTYPE -o value "${DISK_DEV}" 2>/dev/null || fdisk -l "${DISK_DEV}" 2>/dev/null | awk '/Disklabel type:/ {print $3}' || true)
 echo "Detected partition table format: ${PT_TYPE:-unknown}"
 
-if [ "${PT_TYPE}" = "gpt" ]; then
+if [ "${PT_TYPE}" = "gpt" ] || [ "${PT_TYPE}" = "PMBR" ] || sgdisk -v "${DISK_DEV}" >/dev/null 2>&1; then
   echo "Relocating backup GPT header to end of disk..."
   which sgdisk >/dev/null 2>&1 && sgdisk -e "${DISK_DEV}" >/dev/null 2>&1 || true
   echo "Expanding GPT partition ${PART_NUM}..."
