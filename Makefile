@@ -362,7 +362,7 @@ diskimage: kernel
 	RDEV=$$(losetup -o 96M --sizelimit $${ROOT_M}M -f --show "$$IMG")
 	trap 'umount -l mnt_tmp/boot mnt_tmp 2>/dev/null || true; losetup -d "$$BDEV" "$$RDEV" 2>/dev/null || true; rm -rf mnt_tmp' EXIT
 	mkfs.vfat -n TC_BOOT -S 512 -s 16 "$$BDEV" > /dev/null
-	mkfs.ext4 -F -O ^metadata_csum -L TC_ROOT -m 0 "$$RDEV" > /dev/null
+	mkfs.ext4 -F -O ^64bit,^metadata_csum -L TC_ROOT -m 0 "$$RDEV" > /dev/null
 	mount "$$RDEV" mnt_tmp && mkdir -p mnt_tmp/boot && mount -t vfat "$$BDEV" mnt_tmp/boot
 	find $(R)/usr/lib/linux-image-* -name "*.dtb" -exec cp -p {} $(BOOTDIR)/ \; 2>/dev/null || true
 	[ ! -e $(BOOTDIR)/uImage ] && (cp -p kernel/uImage $(BOOTDIR)/ 2>/dev/null || cp -p $(BOOTDIR)/vmlinuz-* $(BOOTDIR)/uImage 2>/dev/null || true)

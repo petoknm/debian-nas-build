@@ -158,6 +158,10 @@ report_test "OS: Pure Debian 13 (Trixie) release" $? "${DEB_VER}"
 grep -q "LABEL=TC_ROOT" "${TMPDIR}/fstab.txt" && grep -q "LABEL=TC_BOOT" "${TMPDIR}/fstab.txt"
 report_test "fstab: Persistent LABEL=TC_ROOT and TC_BOOT mounts" $? ""
 
+# Verify standard 32-bit ext4 descriptors (^64bit for ARMv7 resize stability)
+tune2fs -l "${EXT_IMG}" 2>/dev/null | grep "Filesystem features:" | grep -vq "64bit"
+report_test "ext4: standard 32-bit descriptors (^64bit for ARMv7)" $? ""
+
 # File listing of rootfs
 ROOT_LIST="${TMPDIR}/root_files.txt"
 "${SEVENZ}" l "${EXT_IMG}" > "${ROOT_LIST}" 2>/dev/null
