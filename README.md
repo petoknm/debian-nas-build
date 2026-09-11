@@ -15,12 +15,15 @@ This project builds customized, bootable **Debian 13 (Trixie)** disk images with
 
 - **Modern Linux Kernel (6.12.x)**: Replaces the deprecated factory Linux 3.2 kernel while preserving factory recovery partitions.
 - **OpenMediaVault 8 (Synchrony)**: Pre-configured with PHP-FPM, Nginx, engine daemon, SaltStack 32-bit runtime, and PAM authentication.
+- **Hybrid MBR/GPT Multi-Bay Support**: Employs a Sector 0 DOS MBR (`0x54cdf5da`) and fixed GPT PARTUUID (`54cdf5da-deb1-f007-a694-32880502ef34`), ensuring reliable root mounting even when populated SATA drive bays push the USB stick to `/dev/sde`.
 - **Fully Automated First-Boot Kernel Flashing**: Boots via USB, automatically flashes the 6.12 kernel to the alternate NAND partition, updates Barebox bootloader parameters, beeps the buzzer, and reboots directly into modern Linux.
 - **Dual-Slot NAND Safety**: Dynamically detects whether the NAS is booted from slot 1 or slot 2 and targets the opposite partition, ensuring the stock factory kernel is never overwritten.
+- **Hardware Watchdog Disarming**: Disarms MCU and SoC hardware watchdogs during boot and shutdown while disabling systemd runtime watchdog to prevent unwanted reboot loops.
+- **Unique First-Boot Security**: Ships zero pre-baked SSH host or user keys and an uninitialized `machine-id`. Generates fresh SSH daemon host keys and root client keypairs automatically on first boot.
 - **Native systemd Integration**: Clean hardware management via native systemd units for fan control, LEDs, buttons, and poweroff—no legacy SysV init or opaque archives.
-- **Online Rootfs Auto-Expansion**: Convenient `zy-expand-rootfs` utility dynamically expands the root partition to 100% of any USB drive size online.
+- **Online Rootfs Auto-Expansion**: Convenient `zy-expand-rootfs` utility dynamically expands the root partition to 100% of any USB drive size online with 32-bit ext4 descriptors and synchronous NAND cache flushing.
 - **ARM Performance Tuning**: Lowers PHP-FPM process concurrency and tunes frontend polling intervals to optimize responsiveness on low-power dual-core ARM CPUs.
-- **Modern OpenSSH 9.2**: Full root & admin SSH support with out-of-the-box password and public-key authentication.
+- **Modern OpenSSH**: Full root & admin SSH support with out-of-the-box password and public-key authentication.
 
 ---
 
@@ -77,7 +80,7 @@ make flash DISK=/dev/sdX
 | `make clean` | Remove temporary build files and generated images |
 | `make clean-all` | Clean bootstrapped rootfs, extracted firmware, and images |
 | `make clean-salt` | Remove cached standalone `salt-minion` and `php-pam` deb packages |
-| `make test` *(or `make verify`)* | Run automated 24-point integrity test suite on disk image |
+| `make test` *(or `make verify`)* | Run automated 33-point integrity & security test suite on disk image |
 | `make flash DISK=/dev/sdX` | Flash the latest built image to a target USB drive |
 | `make help` | Print help and list all targets and variables |
 
@@ -141,37 +144,48 @@ zstd -dc images/debian-nas-trixie-*.img.zst | sudo dd of=/dev/sdX bs=4M status=p
 
 ## Automated Image Integrity Test Suite
 
-To ensure image integrity and target NAS compatibility after any code modifications, run the automated test suite:
+To ensure image integrity, hardware compatibility, and deployment safety after any code modifications, run the automated test suite:
 
 ```bash
 make test
 # or specify an explicit image:
-make test IMG=images/debian-nas-trixie-26.250-armhf.img.zst
+make test IMG=images/debian-nas-trixie-26.254-armhf.img.zst
 ```
 
-The test runner (`scripts/test-image-integrity.sh`) executes **24 non-destructive validation checks** in seconds without requiring root/sudo privileges:
+The test runner (`scripts/test-image-integrity.sh`) executes **33 automated validation checks** directly against the generated distribution image in seconds without requiring root/sudo privileges:
 
-1. **Image Archive & Partition Table**:
+1. **Image Archive & Hybrid Partition Layout (6 checks)**:
    - Validates `zstd` archive checksums and successful decompression.
-   - Confirms GPT partition table integrity and structure (`sgdisk`).
-   - Verifies exact partition names and GUIDs (`TC_BOOT` Microsoft Basic Data `54CDF5DA-DEB1-B007-A694-32880502EF34`, `TC_ROOT` Linux Filesystem `54CDF5DA-DEB1-F007-A694-32880502EF34`).
-2. **Boot Partition (`TC_BOOT`)**:
-   - Confirms presence and minimum size of Linux 6.12 `uImage` and initramfs.
+   - Verifies valid MBR DOS partition table with fixed Disk ID (`0x54cdf5da`).
+   - Confirms MBR Partition 1 (`TC_BOOT`, 95 MB, Type `0x0c` W95 FAT32 LBA, Bootable flag active).
+   - Confirms MBR Partition 2 (`TC_ROOT`, Type `0x83` Linux).
+   - Validates Hybrid GPT table with exact 128-bit PARTUUID (`54cdf5da-deb1-f007-a694-32880502ef34`), ensuring root mounting succeeds on multi-drive NAS configurations where USB becomes `/dev/sde`.
+2. **Boot Partition (`TC_BOOT`) Integrity (5 checks)**:
+   - Confirms presence and integrity of Linux 6.12 `uImage` (> 5 MB).
    - Validates Comcerto 2000 Device Tree Blobs (`ls1024a-nas540.dtb`, `ls1024a-nas520.dtb`, `ls1024a-nas5xx.dtb`).
    - Confirms Barebox stock pivot scripts (`debroot.sh`, `usb_key_func.sh`).
    - Confirms stock authentication files (`md5sum`, `nas5xx_check_file`, `salted_md5sum_libzy.so.fw5`).
-   - Asserts zero legacy NSA / STG clutter.
-3. **Root Filesystem (`TC_ROOT`)**:
-   - Checks pure Debian 13 (Trixie) release versioning.
-   - Verifies `/etc/fstab` persistent LABEL mounts.
+   - Asserts zero legacy NSA / STG checkfile clutter.
+3. **Root Filesystem (`TC_ROOT`) System Configuration & Security (9 checks)**:
+   - Checks pure Debian 13 (Trixie) release versioning (`/etc/debian_version`).
+   - Verifies `/etc/fstab` persistent `LABEL=TC_ROOT` and `LABEL=TC_BOOT` mounts.
+   - **Standard 32-bit ext4 descriptors**: Confirms `^64bit` is set on the filesystem to eliminate `resize_inode` corruption during online expansion on 32-bit ARM.
    - Validates first-boot kernel NAND flasher and expander scripts (`debinit.sh`, `zy-bb-env-and-kernel2-write`, `zy-kernel2-write`, `zy-expand-rootfs`).
-   - Verifies dynamic PHP-FPM service detection and vendor controls (`info_setenv`, `buzzerc`, `flash_erase`, `nandwrite`).
+   - Verifies dynamic PHP-FPM service detection in `debinit.sh`.
+   - Validates vendor controls and MTD flash tools (`info_setenv`, `buzzerc`, `flash_erase`, `nandwrite`).
    - Checks populated Linux 6.12 kernel modules tree (`usr/lib/modules/6.12.95+nas5xx`).
-4. **OpenMediaVault 8 & SaltStack Runtime**:
-   - Validates package installation and configuration status (`openmediavault`, `openmediavault-omvextrasorg`).
+   - **Security**: Asserts zero embedded SSH host keys (`/etc/ssh/ssh_host_*`) or private user keys (`/root/.ssh`), verifying keys are provisioned uniquely on first boot.
+   - **Machine Identity**: Asserts uninitialized `/etc/machine-id` (0 bytes) to ensure systemd assigns a unique machine ID on first boot.
+4. **OpenMediaVault 8 & SaltStack Runtime (13 checks)**:
+   - Validates package installation status (`openmediavault`, `openmediavault-omvextrasorg`).
    - Confirms standalone 32-bit `armhf` packages (`php-pam`, `salt-minion`, `openmediavault-salt`).
-   - Checks CLI symlinks (`salt-call`, `salt-minion`).
-   - Verifies enabled multi-user systemd targets (`openmediavault-engined`, `nginx`, `ssh`).
+   - Checks CLI symlinks (`/usr/bin/salt-call`, `/usr/bin/salt-minion`).
+   - Verifies enabled multi-user systemd services (`openmediavault-engined`, `nginx`, `ssh`).
+   - Verifies Comcerto 2000 hardware units (`zy-hw-init.service`, `zy-ready.service`, `zy-fanctrl.timer`, `zy-stop.service`).
+   - Confirms universal PID 1 compatibility shim (`/etc/preinit` and `/init` symlink).
+   - Validates Comcerto PFE network driver configs and persistent link policies.
+   - Verifies `/usr/sbin` vendor compatibility symlinks (`setLED`, `buzzerc`, `rtcAccess`, `mrd_mac`).
+   - Validates hardware watchdog disarming (`RuntimeWatchdogSec=off` and `OMV_WATCHDOG_ENABLED=NO`).
    - Confirms ARM performance tuning (`pm.max_children = 4`).
 
 ---
@@ -213,26 +227,29 @@ Once the NAS reboots and acquires an IP address via DHCP:
 
 ## Expanding the USB Root Partition (Online)
 
-The flashed image creates a default ~2.7 GB root partition so it can be written to almost any USB stick size. If your USB drive is larger (e.g. 8 GB, 16 GB, 32 GB, or 64 GB), you can easily expand the root partition to use 100% of the drive online without rebooting:
+The flashed image creates a compact ~2 GB root partition so it can be written to almost any USB flash drive. **Auto-expansion runs automatically on first boot** via `debinit.sh` / `zy-expand-rootfs`, safely expanding partition 2 and the ext4 filesystem to 100% of the drive capacity.
 
-### Option 1: Automated One-Command Expansion (Recommended)
-SSH into the NAS and run the pre-installed expansion script:
+If you ever need to re-trigger expansion manually:
+
+### Option 1: Automated zy-expand-rootfs Utility (Recommended)
+SSH into the NAS and run the pre-installed expansion utility:
 ```bash
 ssh root@<nas-ip>
 zy-expand-rootfs
 ```
-This utility automatically detects your active root block device, shifts the backup GPT header to the end of the disk, expands partition 2 to 100%, reloads the kernel partition table, and resizes the ext4 filesystem online.
+This utility automatically detects your active root block device, relocates the secondary GPT header to the physical end of the disk, expands partition 2 to 100% while preserving the fixed PARTUUID (`54cdf5da-deb1-f007-a694-32880502ef34`), reloads the kernel partition table, resizes ext4 online, and synchronously commits descriptors to NAND flash.
 
-### Option 2: Manual Expansion via parted
-If you prefer running the commands step-by-step manually:
+### Option 2: Manual Expansion via sgdisk
+If you prefer running the commands manually:
 ```bash
 ssh root@<nas-ip>
 
 # (Assuming the USB drive is /dev/sde - verify with lsblk first)
 sgdisk -e /dev/sde
-parted -s /dev/sde resizepart 2 100%
+sgdisk -d 2 -n 2:0:0 -c 2:TC_ROOT -t 2:8300 -u 2:54cdf5da-deb1-f007-a694-32880502ef34 /dev/sde
 partx -u /dev/sde
 resize2fs /dev/sde2
+sync
 ```
 
 Verify the expanded filesystem:
