@@ -36,6 +36,7 @@ if [ ! -f /boot/.rootfs_expanded ]; then
     echo "=== Auto-expanding USB root filesystem to fill drive... ==="
     echo "=========================================================="
     /bin/bash /usr/local/bin/zy-expand-rootfs || true
+    sync
   fi
 fi
 

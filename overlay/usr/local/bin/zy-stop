@@ -8,5 +8,6 @@ RTC_BIN=$(command -v rtcAccess || command -v /firmware/sbin/rtcAccess || command
 [ -n "$RTC_BIN" ] && "$RTC_BIN" clearAF 2>/dev/null || true
 
 rm -f /tmp/.dru-boot.done
+sync
 exit 0
 

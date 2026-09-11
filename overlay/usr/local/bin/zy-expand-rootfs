@@ -94,10 +94,12 @@ echo "Resizing ext4 filesystem on ${ROOT_DEV}..."
 if which resize2fs >/dev/null 2>&1; then
   resize2fs "${ROOT_DEV}" || true
 fi
+sync
 
 # Mark expansion completed
 if [ -d /boot ]; then
   touch /boot/.rootfs_expanded
+  sync
 fi
 
 echo "=== USB rootfs auto-expansion completed successfully ==="
