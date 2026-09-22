@@ -93,6 +93,9 @@ flash: ## Flash latest built image to USB drive (Usage: make flash DISK=/dev/sdX
 	test -n "$$IMG" || { echo "ERROR: No image found in images/. Run 'make' first."; exit 1; }
 	read -p "Overwrite $(DISK) with $$IMG? [y/N] " -n 1 -r; echo ""
 	[[ $$REPLY =~ ^[Yy]$$ ]] || exit 1
+	@sudo umount $(DISK)* 2>/dev/null || true
+	@echo "Zapping partition table and ghost backup GPT on $(DISK)..."
+	@sudo sgdisk -Z $(DISK) 2>/dev/null || sudo wipefs -a $(DISK) 2>/dev/null || true
 	zstd -dc "$$IMG" | sudo dd of=$(DISK) bs=4M status=progress conv=fsync && sync
 	echo "Flashing complete!"
 

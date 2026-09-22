@@ -129,15 +129,24 @@ This build system solves this by building a standalone 32-bit `salt-minion` bund
 
 ## Flashing the USB Drive
 
-You can flash directly using the Makefile:
+### Option 1: Direct Flashing via Makefile (Recommended)
+`make flash` automatically unmounts target partitions and runs `sgdisk -Z` to zap any leftover partition tables or secondary backup GPT headers from prior expansions before writing:
+
 ```bash
 make flash DISK=/dev/sdX
 ```
 
-Or manually with `dd` and `zstd`:
+### Option 2: Manual Flashing with `dd`
+When reflashing a USB drive that was previously expanded, always zap the partition structures first so the kernel does not detect a stale secondary GPT header at the end of the physical disk:
+
 ```bash
-# Decompress and flash (replace /dev/sdX with your actual USB drive)
+# 1. Unmount and zap old MBR and secondary GPT at the end of the disk
+sudo umount /dev/sdX* 2>/dev/null || true
+sudo sgdisk -Z /dev/sdX
+
+# 2. Decompress and flash (replace /dev/sdX with your actual USB drive)
 zstd -dc images/debian-nas-trixie-*.img.zst | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
+sudo sync
 ```
 
 ---
