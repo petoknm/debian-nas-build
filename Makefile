@@ -100,7 +100,8 @@ flash: ## Flash latest built image to USB drive (Usage: make flash DISK=/dev/sdX
 	@sudo umount $(DISK)* 2>/dev/null || true
 	@echo "Zapping partition table and ghost backup GPT on $(DISK)..."
 	@sudo sgdisk -Z $(DISK) 2>/dev/null || sudo wipefs -a $(DISK) 2>/dev/null || true
-	zstd -dc "$$IMG" | sudo dd of=$(DISK) bs=4M status=progress conv=fsync && sync
+	@test -b "$(DISK)" || { echo "ERROR: $(DISK) disconnected or is not a block device!"; exit 1; }
+	zstd -dc "$$IMG" | sudo dd of=$(DISK) bs=4M status=progress conv=fsync oflag=direct && sync
 	echo "Flashing complete!"
 
 clean: ## Clean generated disk images and temporary artifacts
