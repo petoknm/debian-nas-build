@@ -115,7 +115,15 @@ BOOT_LIST="${TMPDIR}/boot_files.txt"
 # uImage exists & > 5MB
 UIMG_SIZE=$(awk '$NF == "uImage" {print $4}' "${BOOT_LIST}")
 [ -n "${UIMG_SIZE}" ] && [ "${UIMG_SIZE}" -gt 5000000 ]
-report_test "Boot: Linux uImage present" $? "$((UIMG_SIZE / 1024 / 1024)) MB"
+UIMG_OK=$?
+
+# Extract uImage to read embedded kernel release name (offset 32..63)
+KRN_RELEASE=""
+"${SEVENZ}" e "${FAT_IMG}" uImage -o"${TMPDIR}" >/dev/null 2>&1 || true
+if [ -f "${TMPDIR}/uImage" ]; then
+	KRN_RELEASE=$(dd if="${TMPDIR}/uImage" bs=1 skip=32 count=32 2>/dev/null | tr -d '\0' | sed 's/^Linux-//')
+fi
+report_test "Boot: Linux uImage present" $UIMG_OK "${KRN_RELEASE} ($((UIMG_SIZE / 1024 / 1024)) MB)"
 
 # Verify device tree blobs for NAS5xx
 DTBS_OK=0
@@ -185,9 +193,25 @@ for tool in firmware/sbin/info_setenv usr/local/bin/buzzerc usr/sbin/flash_erase
 done
 report_test "Hardware: MTD flashers & vendor controls (info_setenv, buzzerc)" $TOOLS_OK ""
 
-# Check kernel modules
-grep -qE "usr/lib/modules/[0-9]+\.[0-9]+.*nas5xx.*/modules\.dep" "${ROOT_LIST}"
-report_test "Kernel: Linux kernel modules tree populated" $? ""
+# Check kernel modules match boot uImage release
+MOD_MATCH=1
+if [ -n "${KRN_RELEASE}" ]; then
+	grep -q "usr/lib/modules/${KRN_RELEASE}/modules.dep" "${ROOT_LIST}" && MOD_MATCH=0
+else
+	grep -qE "usr/lib/modules/[0-9]+\.[0-9]+.*nas5xx.*/modules\.dep" "${ROOT_LIST}" && MOD_MATCH=0
+fi
+report_test "Kernel: uImage & rootfs modules version match" $MOD_MATCH "${KRN_RELEASE}"
+
+# Verify essential hardware drivers exist in matching module tree (PFE Ethernet & NAND MTD)
+DRV_OK=0
+if [ -n "${KRN_RELEASE}" ]; then
+	grep -q "usr/lib/modules/${KRN_RELEASE}/.*pfe\.ko" "${ROOT_LIST}" || DRV_OK=1
+	grep -q "usr/lib/modules/${KRN_RELEASE}/.*ls1024a_nand\.ko" "${ROOT_LIST}" || DRV_OK=1
+else
+	grep -qE "usr/lib/modules/.*pfe\.ko" "${ROOT_LIST}" || DRV_OK=1
+	grep -qE "usr/lib/modules/.*ls1024a_nand\.ko" "${ROOT_LIST}" || DRV_OK=1
+fi
+report_test "Kernel: Comcerto PFE & NAND drivers present" $DRV_OK "pfe, ls1024a_nand"
 
 # Security: verify zero embedded SSH host/user private keys
 EMBEDDED_KEYS=0

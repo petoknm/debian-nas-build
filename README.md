@@ -174,7 +174,7 @@ make test
 make test IMG=images/debian-nas-trixie-26.254-armhf.img.zst
 ```
 
-The test runner (`scripts/test-image-integrity.sh`) executes **33 automated validation checks** directly against the generated distribution image in seconds without requiring root/sudo privileges:
+The test runner (`scripts/test-image-integrity.sh`) executes **34 automated validation checks** directly against the generated distribution image in seconds without requiring root/sudo privileges:
 
 1. **Image Archive & Hybrid Partition Layout (6 checks)**:
    - Validates `zstd` archive checksums and successful decompression.
@@ -183,19 +183,20 @@ The test runner (`scripts/test-image-integrity.sh`) executes **33 automated vali
    - Confirms MBR Partition 2 (`TC_ROOT`, Type `0x83` Linux).
    - Validates Hybrid GPT table with exact 128-bit PARTUUID (`54cdf5da-deb1-f007-a694-32880502ef34`), ensuring root mounting succeeds on multi-drive NAS configurations where USB becomes `/dev/sde`.
 2. **Boot Partition (`TC_BOOT`) Integrity (5 checks)**:
-   - Confirms presence and integrity of Linux 6.12 `uImage` (> 5 MB).
+   - Confirms presence and integrity of Linux `uImage` (> 5 MB).
    - Validates Comcerto 2000 Device Tree Blobs (`ls1024a-nas540.dtb`, `ls1024a-nas520.dtb`, `ls1024a-nas5xx.dtb`).
    - Confirms Barebox stock pivot scripts (`debroot.sh`, `usb_key_func.sh`).
    - Confirms stock authentication files (`md5sum`, `nas5xx_check_file`, `salted_md5sum_libzy.so.fw5`).
    - Asserts zero legacy NSA / STG checkfile clutter.
-3. **Root Filesystem (`TC_ROOT`) System Configuration & Security (9 checks)**:
+3. **Root Filesystem (`TC_ROOT`) System Configuration & Security (10 checks)**:
    - Checks pure Debian 13 (Trixie) release versioning (`/etc/debian_version`).
    - Verifies `/etc/fstab` persistent `LABEL=TC_ROOT` and `LABEL=TC_BOOT` mounts.
    - **Standard 32-bit ext4 descriptors**: Confirms `^64bit` is set on the filesystem to eliminate `resize_inode` corruption during online expansion on 32-bit ARM.
    - Validates first-boot kernel NAND flasher and expander scripts (`debinit.sh`, `zy-bb-env-and-kernel2-write`, `zy-kernel2-write`, `zy-expand-rootfs`).
    - Verifies dynamic PHP-FPM service detection in `debinit.sh`.
    - Validates vendor controls and MTD flash tools (`info_setenv`, `buzzerc`, `flash_erase`, `nandwrite`).
-   - Checks populated Linux 6.12 kernel modules tree (`usr/lib/modules/6.12.95+nas5xx`).
+   - **Kernel & Modules Version Synchronization**: Verifies that the kernel release string embedded in `/boot/uImage` matches the `/usr/lib/modules/<version>` directory on the rootfs, preventing missing network/NAND module panics.
+   - **Critical Hardware Drivers**: Confirms presence of `pfe.ko` (Ethernet) and `ls1024a_nand.ko` (NAND flash) within the matching module tree.
    - **Security**: Asserts zero embedded SSH host keys (`/etc/ssh/ssh_host_*`) or private user keys (`/root/.ssh`), verifying keys are provisioned uniquely on first boot.
    - **Machine Identity**: Asserts uninitialized `/etc/machine-id` (0 bytes) to ensure systemd assigns a unique machine ID on first boot.
 4. **OpenMediaVault 8 & SaltStack Runtime (13 checks)**:
