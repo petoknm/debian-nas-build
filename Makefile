@@ -22,10 +22,10 @@ MODEL        := $(strip $(subst ",,$(MODEL)))
 ENABLE_OMV   := $(strip $(subst ",,$(ENABLE_OMV)))
 HOSTNAME     := $(strip $(subst ",,$(HOSTNAME)))
 
-# Linux 6.12 Kernel & Zyxel Firmware
-KERNEL_VER   ?= 6.12.95-20260823
+# Linux Kernel & Zyxel Firmware
+KERNEL_VER   ?= 6.18.52-20260916
 KERNEL_ZIP   := linux-image-$(KERNEL_VER)-nas5xx-armhf.zip
-KERNEL_URL   := https://github.com/scpcom/linux/releases/download/v6.12.95-7018-sbc/$(KERNEL_ZIP)
+KERNEL_URL   := https://github.com/scpcom/linux/releases/download/v6.18.52-7018-sbc/$(KERNEL_ZIP)
 FW_URL_nas542 := https://zyxel.ddnss.eu/Users/Mijzelf/Firmware/NAS542/521ABAG10C0.bin
 FW_URL_nas540 := https://zyxel.ddnss.eu/Users/Mijzelf/Firmware/NAS540/521AATB10C0.bin
 FW_URL_nas520 := https://zyxel.ddnss.eu/Users/Mijzelf/Firmware/NAS520_V5.21(AASZ.5)C0.zip
@@ -55,7 +55,11 @@ ifeq ($(IN_CONTAINER),0)
 
 kernel/$(KERNEL_ZIP):
 	@mkdir -p kernel
-	curl -Ls -o $@ $(KERNEL_URL) || wget -qO $@ $(KERNEL_URL)
+	@if [ -f "../linux/$(KERNEL_ZIP)" ]; then \
+		cp -p "../linux/$(KERNEL_ZIP)" $@; \
+	elif [ ! -f "$@" ]; then \
+		(curl -Ls -o $@ $(KERNEL_URL) || wget -qO $@ $(KERNEL_URL) || true); \
+	fi
 
 prep: .config kernel/$(KERNEL_ZIP)
 
@@ -75,7 +79,7 @@ firmware: builder-image prep  ## Stage 2: Extract Zyxel firmware tools inside co
 salt-pkg: builder-image prep  ## Build or download standalone armhf salt-minion deb
 php-pam-pkg: builder-image prep ## Build standalone armhf php-pam deb
 omv: builder-image prep       ## Stage 3: Install & configure OpenMediaVault inside container
-kernel: builder-image prep    ## Stage 4: Deploy Linux 6.12 kernel & NAND flashers inside container
+kernel: builder-image prep    ## Stage 4: Deploy Linux BSP kernel & NAND flashers inside container
 
 all full diskimage bootstrap firmware omv kernel image salt-pkg php-pam-pkg:
 	@$(DOCKER_CMD) $@
@@ -296,7 +300,7 @@ ifeq ($(ENABLE_OMV),true)
 endif
 
 kernel:
-	@echo "=== [Stage 4] Deploying Linux 6.12 Kernel & Overlay ==="
+	@echo "=== [Stage 4] Deploying Linux $(KERNEL_VER) Kernel & Overlay ==="
 	mkdir -p $(BOOTDIR) $(R)/usr/local/bin
 	if [ -f kernel/$(KERNEL_ZIP) ]; then \
 		TMP=$$(mktemp -d $(R)/tmp/kdeb.XXXX); \

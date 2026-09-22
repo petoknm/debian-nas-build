@@ -115,7 +115,7 @@ BOOT_LIST="${TMPDIR}/boot_files.txt"
 # uImage exists & > 5MB
 UIMG_SIZE=$(awk '$NF == "uImage" {print $4}' "${BOOT_LIST}")
 [ -n "${UIMG_SIZE}" ] && [ "${UIMG_SIZE}" -gt 5000000 ]
-report_test "Boot: Linux 6.12 uImage present" $? "$((UIMG_SIZE / 1024 / 1024)) MB"
+report_test "Boot: Linux uImage present" $? "$((UIMG_SIZE / 1024 / 1024)) MB"
 
 # Verify device tree blobs for NAS5xx
 DTBS_OK=0
@@ -186,8 +186,8 @@ done
 report_test "Hardware: MTD flashers & vendor controls (info_setenv, buzzerc)" $TOOLS_OK ""
 
 # Check kernel modules
-grep -q "usr/lib/modules/6.12.95+nas5xx/modules.dep" "${ROOT_LIST}"
-report_test "Kernel: Linux 6.12 kernel modules tree populated" $? ""
+grep -qE "usr/lib/modules/[0-9]+\.[0-9]+.*nas5xx.*/modules\.dep" "${ROOT_LIST}"
+report_test "Kernel: Linux kernel modules tree populated" $? ""
 
 # Security: verify zero embedded SSH host/user private keys
 EMBEDDED_KEYS=0
