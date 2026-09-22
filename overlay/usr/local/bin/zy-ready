@@ -13,6 +13,12 @@ fi
 if [ ! -e /etc/.zy-first.done ]; then
   /usr/local/bin/zy-nand-get
 
+  # AUTO-EXPAND ROOTFS: Expand USB partition 2 and ext4 filesystem to fill physical USB drive
+  if [ ! -f /boot/.rootfs_expanded ] && [ -x /usr/local/bin/zy-expand-rootfs ]; then
+    /bin/bash /usr/local/bin/zy-expand-rootfs || true
+    sync
+  fi
+
   if command -v omv-confdbadm >/dev/null 2>&1 || command -v omv-initsystem >/dev/null 2>&1; then
     if command -v omv-initsystem >/dev/null 2>&1; then
       omv-initsystem
