@@ -149,6 +149,19 @@ zstd -dc images/debian-nas-trixie-*.img.zst | sudo dd of=/dev/sdX bs=4M status=p
 sudo sync
 ```
 
+> [!IMPORTANT]
+> **Troubleshooting: Reflashing Over an Expanded Rootfs ("Ghost Backup GPT" Panic)**
+> If you write a new ~2 GB image directly over a previously expanded USB flash drive using plain `dd` without zapping the drive first, `dd` only overwrites the first 2 GB. The stale secondary (backup) GPT header written at the physical end of the 16 GB / 32 GB flash drive remains untouched.
+>
+> On boot, the Linux kernel detects that the primary GPT header size does not match the physical drive and falls back to the old secondary GPT header at the end of the disk. This creates a partition boundary conflict with the newly written filesystem, resulting in an immediate ext4 mount failure and bootloop:
+> ```text
+> [   25.820000] EXT4-fs error (device sde2): ext4_get_journal_inode:5814: inode #8: comm swapper/0: iget: bad extra_isize 4419 (inode size 256)
+> [   25.840000] EXT4-fs (sde2): no journal found
+> [   25.850000] VFS: Cannot open root device "PARTUUID=54cdf5da-deb1-f007-a694-32880502ef34" or unknown-block(8,66): error -117
+> [   26.060000] Kernel panic - not syncing: VFS: Unable to mount root fs on unknown-block(8,66)
+> ```
+> If you encounter this error after reflashing, simply run `sudo sgdisk -Z /dev/sdX` and reflash the image (or use `make flash DISK=/dev/sdX`, which automates this step).
+
 ---
 
 ## Automated Image Integrity Test Suite
