@@ -338,7 +338,6 @@ diskimage: kernel
 	mkdir -p images mnt_tmp
 	echo "$(HOSTNAME)" > $(R)/etc/hostname
 	sed -i -E 's/127\.0\.1\.1.*/127.0.1.1\t$(HOSTNAME)/' $(R)/etc/hosts 2>/dev/null || true
-	chmod +x $(R)/usr/local/bin/* $(R)/debinit.sh $(R)/etc/preinit 2>/dev/null || true
 	rm -f $(R)/root/qemu_*.core $(R)/etc/ssh/ssh_host_* 2>/dev/null || true
 	rm -rf $(R)/root/.ssh $(R)/home/*/.ssh 2>/dev/null || true
 	: > $(R)/etc/machine-id
@@ -361,8 +360,6 @@ diskimage: kernel
 	mkfs.vfat -n TC_BOOT -S 512 -s 16 "$$BDEV" > /dev/null
 	mkfs.ext4 -F -O ^64bit,^metadata_csum -L TC_ROOT -m 0 "$$RDEV" > /dev/null
 	mount "$$RDEV" mnt_tmp && mkdir -p mnt_tmp/boot && mount -t vfat "$$BDEV" mnt_tmp/boot
-	find $(R)/usr/lib/linux-image-* -name "*.dtb" -exec cp -p {} $(BOOTDIR)/ \; 2>/dev/null || true
-	[ ! -e $(BOOTDIR)/uImage ] && (cp -p kernel/uImage $(BOOTDIR)/ 2>/dev/null || cp -p $(BOOTDIR)/vmlinuz-* $(BOOTDIR)/uImage 2>/dev/null || true)
 	rsync -aHAX --exclude='/boot' --exclude='/mnt_tmp' --exclude='/images' $(R)/ mnt_tmp/
 	rsync -rtLv --modify-window=1 $(BOOTDIR)/ mnt_tmp/boot/
 	grep -q "TC_ROOT" mnt_tmp/etc/fstab || echo 'LABEL=TC_ROOT / ext4 defaults,noatime 0 1' >> mnt_tmp/etc/fstab
