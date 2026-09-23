@@ -272,10 +272,6 @@ ifeq ($(ENABLE_OMV),true)
 	sed -i 's|^auth.*pam_faillock.so|#&|' $(R)/etc/pam.d/openmediavault* 2>/dev/null || true
 	for p in $(R)/etc/php/*/fpm/pool.d/openmediavault-webgui.conf; do [ -f "$$p" ] && sed -i 's/pm.max_children = .*/pm.max_children = 4/' "$$p" 2>/dev/null || true; done
 	for f in $(R)/var/www/openmediavault/main.*.js ; do [ -f "$$f" ] && sed -i 's/defaultTo(Be,500)/defaultTo(Be,2500)/g' "$$f" 2>/dev/null || true; done
-	mkdir -p $(R)/usr/share/openmediavault/initsystem.disabled
-	for s in 60rootfs 65mdadm 90sysctl 99rrd; do [ -e $(R)/usr/share/openmediavault/initsystem/$$s ] && mv $(R)/usr/share/openmediavault/initsystem/$$s $(R)/usr/share/openmediavault/initsystem.disabled/ 2>/dev/null || true; done
-	rm -f $(R)/usr/share/openmediavault/mkconf/sysctl.d/nonrot 2>/dev/null || true
-	[ -e $(R)/usr/share/openmediavault/initsystem/40interfaces ] && sed -i 's/eth|wlan/eth|egiga|wlan/g' $(R)/usr/share/openmediavault/initsystem/40interfaces 2>/dev/null || true
 	[ -e $(R)/usr/share/php/openmediavault/system/user.inc ] && sed -i 's/"UID_MIN", 1000/"UID_MIN", 502/g' $(R)/usr/share/php/openmediavault/system/user.inc 2>/dev/null || true
 	[ -e $(R)/usr/share/php/openmediavault/system/group.inc ] && sed -i 's/"GID_MIN", 1000/"GID_MIN", 500/g' $(R)/usr/share/php/openmediavault/system/group.inc 2>/dev/null || true
 	[ -e $(R)/usr/share/php/openmediavault/system/net/networkinterfacebackend/ethernet.inc ] && sed -i 's/eth|venet/eth|egiga|venet/g' $(R)/usr/share/php/openmediavault/system/net/networkinterfacebackend/ethernet.inc 2>/dev/null || true
