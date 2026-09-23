@@ -25,7 +25,7 @@ HOSTNAME     := $(strip $(subst ",,$(HOSTNAME)))
 # Linux Kernel & Zyxel Firmware
 KERNEL_VER   ?= 6.18.52-20260916
 KERNEL_ZIP   := linux-image-$(KERNEL_VER)-nas5xx-armhf.zip
-KERNEL_URL   := https://github.com/scpcom/linux/releases/download/v6.18.52-7018-sbc/$(KERNEL_ZIP)
+KERNEL_URL   := https://github.com/petoknm/debian-nas-build/releases/download/debian-nas-20260923/$(KERNEL_ZIP)
 FW_URL_nas542 := https://zyxel.ddnss.eu/Users/Mijzelf/Firmware/NAS542/521ABAG10C0.bin
 FW_URL_nas540 := https://zyxel.ddnss.eu/Users/Mijzelf/Firmware/NAS540/521AATB10C0.bin
 FW_URL_nas520 := https://zyxel.ddnss.eu/Users/Mijzelf/Firmware/NAS520_V5.21(AASZ.5)C0.zip
