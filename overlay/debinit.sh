@@ -98,6 +98,3 @@ if [ -f /etc/default/openmediavault ] || [ -x /usr/sbin/omv-engined ]; then
   /etc/init.d/openmediavault-engined restart 2>/dev/null || /usr/sbin/omv-engined 2>/dev/null || true
 fi
 
-/etc/init.d/rpcbind restart 2>/dev/null || true
-/etc/init.d/nfs-kernel-server restart 2>/dev/null || true
-/etc/init.d/samba restart 2>/dev/null || true
