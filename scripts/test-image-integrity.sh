@@ -213,6 +213,11 @@ else
 fi
 report_test "Kernel: Comcerto PFE & NAND drivers present" $DRV_OK "pfe, ls1024a_nand"
 
+# Check single kernel modules directory exists (no orphaned kernel clutter)
+KERNEL_MOD_DIRS=$(grep -oE "usr/lib/modules/[0-9]+\.[0-9]+[^/]+" "${ROOT_LIST}" | sort -u | wc -l)
+[ "${KERNEL_MOD_DIRS}" -eq 1 ]
+report_test "Kernel: single kernel installed (no duplicate module trees)" $? "found ${KERNEL_MOD_DIRS}"
+
 # Security: verify zero embedded SSH host/user private keys
 EMBEDDED_KEYS=0
 grep -qE "etc/ssh/ssh_host_|root/\.ssh" "${ROOT_LIST}" && EMBEDDED_KEYS=1 || true

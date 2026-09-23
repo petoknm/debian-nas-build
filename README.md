@@ -80,7 +80,7 @@ make flash DISK=/dev/sdX
 | `make clean` | Remove temporary build files and generated images |
 | `make clean-all` | Clean bootstrapped rootfs, extracted firmware, and images |
 | `make clean-salt` | Remove cached standalone `salt-minion` and `php-pam` deb packages |
-| `make test` *(or `make verify`)* | Run automated 34-point integrity & security test suite on disk image |
+| `make test` *(or `make verify`)* | Run automated 35-point integrity & security test suite on disk image |
 | `make flash DISK=/dev/sdX` | Flash the latest built image to a target USB drive |
 | `make help` | Print help and list all targets and variables |
 
@@ -174,7 +174,7 @@ make test
 make test IMG=images/debian-nas-trixie-26.254-armhf.img.zst
 ```
 
-The test runner (`scripts/test-image-integrity.sh`) executes **34 automated validation checks** directly against the generated distribution image in seconds without requiring root/sudo privileges:
+The test runner (`scripts/test-image-integrity.sh`) executes **35 automated validation checks** directly against the generated distribution image in seconds without requiring root/sudo privileges:
 
 1. **Image Archive & Hybrid Partition Layout (6 checks)**:
    - Validates `zstd` archive checksums and successful decompression.
@@ -188,7 +188,7 @@ The test runner (`scripts/test-image-integrity.sh`) executes **34 automated vali
    - Confirms Barebox stock pivot scripts (`debroot.sh`, `usb_key_func.sh`).
    - Confirms stock authentication files (`md5sum`, `nas5xx_check_file`, `salted_md5sum_libzy.so.fw5`).
    - Asserts zero legacy NSA / STG checkfile clutter.
-3. **Root Filesystem (`TC_ROOT`) System Configuration & Security (10 checks)**:
+3. **Root Filesystem (`TC_ROOT`) System Configuration & Security (11 checks)**:
    - Checks pure Debian 13 (Trixie) release versioning (`/etc/debian_version`).
    - Verifies `/etc/fstab` persistent `LABEL=TC_ROOT` and `LABEL=TC_BOOT` mounts.
    - **Standard 32-bit ext4 descriptors**: Confirms `^64bit` is set on the filesystem to eliminate `resize_inode` corruption during online expansion on 32-bit ARM.
@@ -197,6 +197,7 @@ The test runner (`scripts/test-image-integrity.sh`) executes **34 automated vali
    - Validates vendor controls and MTD flash tools (`info_setenv`, `buzzerc`, `flash_erase`, `nandwrite`).
    - **Kernel & Modules Version Synchronization**: Verifies that the kernel release string embedded in `/boot/uImage` matches the `/usr/lib/modules/<version>` directory on the rootfs, preventing missing network/NAND module panics.
    - **Critical Hardware Drivers**: Confirms presence of `pfe.ko` (Ethernet) and `ls1024a_nand.ko` (NAND flash) within the matching module tree.
+   - **Single Kernel Guarantee**: Asserts exactly one kernel module directory exists in `/usr/lib/modules/`, ensuring no orphaned previous kernels remain packaged in the distribution image.
    - **Security**: Asserts zero embedded SSH host keys (`/etc/ssh/ssh_host_*`) or private user keys (`/root/.ssh`), verifying keys are provisioned uniquely on first boot.
    - **Machine Identity**: Asserts uninitialized `/etc/machine-id` (0 bytes) to ensure systemd assigns a unique machine ID on first boot.
 4. **OpenMediaVault 8 & SaltStack Runtime (13 checks)**:

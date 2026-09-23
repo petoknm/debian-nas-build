@@ -296,11 +296,17 @@ kernel:
 		TMP=$$(mktemp -d $(R)/tmp/kdeb.XXXX); \
 		REL="/tmp/$$(basename $$TMP)"; \
 		unzip -qo kernel/$(KERNEL_ZIP) -d "$$TMP"; \
+		NEW_PKGS=$$(for f in "$$TMP"/*.deb; do [ -f "$$f" ] && dpkg-deb -f "$$f" Package 2>/dev/null; done); \
+		for oldpkg in $$(chroot $(R) dpkg-query -W -f='$${Package}\n' 'linux-image-*' 'linux-headers-*' 2>/dev/null || true); do \
+			echo "$$NEW_PKGS" | grep -qw "$$oldpkg" || chroot $(R) dpkg --purge --force-all "$$oldpkg" 2>/dev/null || true; \
+		done; \
 		[ -f "$$TMP/uImage" ] && cp -p "$$TMP/uImage" $(BOOTDIR)/ && cp -p "$$TMP/uImage" kernel/ 2>/dev/null || true; \
 		find "$$TMP" -name "*.dtb" -exec cp -p {} $(BOOTDIR)/ \;; \
 		chroot $(R) sh -c "rm -f $$REL/linux-setup*.deb && dpkg -i --force-depends $$REL/*.deb 2>/dev/null || true"; \
 		rm -rf "$$TMP"; \
 	fi
+	find $(BOOTDIR) -maxdepth 1 -type f \( -name "vmlinuz-*" -o -name "initrd.img-*" -o -name "System.map-*" -o -name "config-*" \) ! -name "*$$(echo $(KERNEL_VER) | cut -d- -f1)*" -delete 2>/dev/null || true
+	find $(R)/usr/lib/modules -mindepth 1 -maxdepth 1 -type d ! -name "*$$(echo $(KERNEL_VER) | cut -d- -f1)*" -exec rm -rf {} + 2>/dev/null || true
 	find $(R)/usr/lib/linux-image-* -name "*.dtb" -exec cp -p {} $(BOOTDIR)/ \; 2>/dev/null || true
 	[ ! -e $(BOOTDIR)/uImage ] && cp -p $(BOOTDIR)/vmlinuz-* $(BOOTDIR)/uImage 2>/dev/null || true
 	[ -e $(BOOTDIR)/uImage ] && cp -p $(BOOTDIR)/uImage kernel/ 2>/dev/null || true
