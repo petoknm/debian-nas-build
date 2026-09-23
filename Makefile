@@ -170,11 +170,6 @@ armhf/bin/bash:
 		lshw lsof man-db netcat-openbsd nfs-common pciutils procps psmisc rdate squashfs-tools ssl-cert fuse3 systemd-resolved
 	sed -i 's/^UID_MIN.*/UID_MIN\t\t\t  502/g' $(R)/etc/login.defs 2>/dev/null || true
 	sed -i 's/^GID_MIN.*/GID_MIN\t\t\t  500/g' $(R)/etc/login.defs 2>/dev/null || true
-	for s in nice:nice watchdog:busybox flashcp:flashcp flash_erase:flash_erase flash_eraseall:flash_eraseall nanddump:nanddump nandwrite:nandwrite i2cget:i2cget i2cset:i2cset; do \
-		dst="/sbin/$${s%%:*}"; [ "$${s%%:*}" = "nice" ] && dst="/bin/nice"; \
-		src="$${s##*:}"; \
-		chroot $(R) sh -c "[ ! -e $$dst ] && ln -s \$$(which $$src 2>/dev/null || echo /bin/true) $$dst || true"; \
-	done
 	umount -l $(R)/dev/pts $(R)/sys $(R)/proc 2>/dev/null || true
 	rm -f $(R)/usr/sbin/policy-rc.d
 	chroot $(R) apt-get clean 2>/dev/null || true
