@@ -234,7 +234,6 @@ ifeq ($(ENABLE_OMV),true)
 	printf '#!/bin/sh\nexit 101\n' > $(R)/usr/sbin/policy-rc.d && chmod +x $(R)/usr/sbin/policy-rc.d
 	printf '#!/bin/sh\n/usr/bin/logger "$$@" 2>/dev/null || true\nexit 0\n' > $(R)/usr/local/bin/logger && chmod +x $(R)/usr/local/bin/logger
 	printf '#!/bin/sh\nexit 0\n' > $(R)/usr/local/bin/monit && chmod +x $(R)/usr/local/bin/monit
-	chroot $(R) sh -c 'ln -sf /usr/bin/php /usr/bin/php8.4 2>/dev/null || true'
 	mount -t proc proc $(R)/proc 2>/dev/null || true
 	mount -t sysfs sys $(R)/sys 2>/dev/null || true
 	mount -t devpts devpts $(R)/dev/pts -o gid=5,mode=620 2>/dev/null || true
