@@ -280,7 +280,7 @@ ifeq ($(ENABLE_OMV),true)
 	sed -i 's/NEED_IDMAPD=.*/NEED_IDMAPD=no/g' $(R)/etc/default/nfs-common 2>/dev/null || true
 	sed -i 's/RSYNC_ENABLE=.*/RSYNC_ENABLE=true/g' $(R)/etc/default/rsync 2>/dev/null || true
 	chroot $(R) systemctl enable ssh 2>/dev/null || true
-	chroot $(R) systemctl disable wsdd2 smbd nmbd winbind ksmbd nfs-server quota quotaon systemd-quotacheck openmediavault-beep-down openmediavault-beep-up 2>/dev/null || true
+	chroot $(R) systemctl disable wsdd2 smbd nmbd winbind ksmbd nfs-server watchdog wd_keepalive quota quotaon systemd-quotacheck openmediavault-beep-down openmediavault-beep-up 2>/dev/null || true
 	umount -l $(R)/dev/pts $(R)/sys $(R)/proc 2>/dev/null || true
 	rm -f $(R)/usr/sbin/policy-rc.d $(R)/usr/local/bin/logger $(R)/usr/local/bin/monit
 	chroot $(R) apt-get clean 2>/dev/null || true
@@ -327,9 +327,6 @@ kernel:
 		ln -sf /etc/systemd/system/zy-stop.service $(R)/etc/systemd/system/$$t.target.wants/zy-stop.service; \
 	done
 	rm -f $(R)/etc/systemd/system/*.target.wants/watchdog.service $(R)/etc/systemd/system/*.target.wants/wd_keepalive.service 2>/dev/null || true
-	ln -sf /dev/null $(R)/etc/systemd/system/watchdog.service 2>/dev/null || true
-	ln -sf /dev/null $(R)/etc/systemd/system/wd_keepalive.service 2>/dev/null || true
-	printf '[Manager]\nRuntimeWatchdogSec=off\n' > $(R)/etc/systemd/system.conf.d/openmediavault-watchdog.conf
 	if [ -f $(R)/etc/default/openmediavault ]; then \
 		sed -i 's/^OMV_WATCHDOG_ENABLED=.*/OMV_WATCHDOG_ENABLED="NO"/' $(R)/etc/default/openmediavault; \
 		grep -q '^OMV_WATCHDOG_ENABLED=' $(R)/etc/default/openmediavault || echo 'OMV_WATCHDOG_ENABLED="NO"' >> $(R)/etc/default/openmediavault; \
