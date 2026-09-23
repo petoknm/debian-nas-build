@@ -40,18 +40,18 @@ if [ ! -f /boot/.rootfs_expanded ]; then
   fi
 fi
 
-# AUTO-FLASH KERNEL 6.12: If booted under stock 3.2 kernel and not yet flashed
+# AUTO-FLASH KERNEL 6.18: If booted under stock 3.2 kernel and not yet flashed
 if uname -r 2>/dev/null | grep -q "^3\.2"; then
   if [ ! -f /boot/.kernel2_flashed ]; then
     echo "=========================================================="
-    echo "=== Auto-flashing Linux 6.12 to alternate NAND slot... ==="
+    echo "=== Auto-flashing Linux 6.18 to alternate NAND slot... ==="
     echo "=========================================================="
     chmod ugo+rx /usr/local/bin/zy-* 2>/dev/null || true
     /bin/bash /usr/local/bin/zy-bb-env-and-kernel2-write > /boot/kernel2_flash.log 2>&1
     FLASH_RET=$?
     if [ ${FLASH_RET} -eq 0 ]; then
       touch /boot/.kernel2_flashed
-      echo "=== Flash SUCCESSFUL! Rebooting into Linux 6.12 in 5 seconds... ===" >> /boot/kernel2_flash.log
+      echo "=== Flash SUCCESSFUL! Rebooting into Linux 6.18 in 5 seconds... ===" >> /boot/kernel2_flash.log
       /sbin/buzzerc -t 2 2>/dev/null || true
       sync
       sleep 5

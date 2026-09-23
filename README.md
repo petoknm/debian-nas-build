@@ -1,6 +1,6 @@
 # Debian NAS Build for Zyxel Devices
 
-This project builds customized, bootable **Debian 13 (Trixie)** disk images with **OpenMediaVault 8 (Synchrony)** for Zyxel NAS hardware, featuring modern Linux kernels (6.12.x) and native systemd support.
+This project builds customized, bootable **Debian 13 (Trixie)** disk images with **OpenMediaVault 8 (Synchrony)** for Zyxel NAS hardware, featuring modern Linux kernels (6.18.x) and native systemd support.
 
 ---
 
@@ -13,10 +13,10 @@ This project builds customized, bootable **Debian 13 (Trixie)** disk images with
 
 ## Key Features
 
-- **Modern Linux Kernel (6.12.x)**: Replaces the deprecated factory Linux 3.2 kernel while preserving factory recovery partitions.
+- **Modern Linux Kernel (6.18.x)**: Replaces the deprecated factory Linux 3.2 kernel while preserving factory recovery partitions.
 - **OpenMediaVault 8 (Synchrony)**: Pre-configured with PHP-FPM, Nginx, engine daemon, SaltStack 32-bit runtime, and PAM authentication.
 - **Hybrid MBR/GPT Multi-Bay Support**: Employs a Sector 0 DOS MBR (`0x54cdf5da`) and fixed GPT PARTUUID (`54cdf5da-deb1-f007-a694-32880502ef34`), ensuring reliable root mounting even when populated SATA drive bays push the USB stick to `/dev/sde`.
-- **Fully Automated First-Boot Kernel Flashing**: Boots via USB, automatically flashes the 6.12 kernel to the alternate NAND partition, updates Barebox bootloader parameters, beeps the buzzer, and reboots directly into modern Linux.
+- **Fully Automated First-Boot Kernel Flashing**: Boots via USB, automatically flashes the modern 6.18 kernel to the alternate NAND partition, updates Barebox bootloader parameters, beeps the buzzer, and reboots directly into modern Linux.
 - **Dual-Slot NAND Safety**: Dynamically detects whether the NAS is booted from slot 1 or slot 2 and targets the opposite partition, ensuring the stock factory kernel is never overwritten.
 - **Hardware Watchdog Disarming**: Disarms MCU and SoC hardware watchdogs during boot and shutdown while disabling systemd runtime watchdog to prevent unwanted reboot loops.
 - **Unique First-Boot Security**: Ships zero pre-baked SSH host or user keys and an uninitialized `machine-id`. Generates fresh SSH daemon host keys and root client keypairs automatically on first boot.
@@ -74,13 +74,13 @@ make flash DISK=/dev/sdX
 | `make firmware` | Stage 2: Extract Zyxel vendor hardware tools from firmware |
 | `make salt-pkg` | Build or fetch standalone 32-bit `salt-minion` deb for armhf |
 | `make omv` | Stage 3: Install & configure OpenMediaVault with ARM tuning |
-| `make kernel` | Stage 4: Deploy Linux 6.12 BSP and automated NAND boot flashers |
-| `make prep` | Download tested Linux 6.12 kernel and verify `.config` |
+| `make kernel` | Stage 4: Deploy Linux 6.18 BSP and automated NAND boot flashers |
+| `make prep` | Download tested Linux 6.18 kernel and verify `.config` |
 | `make shell` | Drop into an interactive container `bash` shell |
 | `make clean` | Remove temporary build files and generated images |
 | `make clean-all` | Clean bootstrapped rootfs, extracted firmware, and images |
 | `make clean-salt` | Remove cached standalone `salt-minion` and `php-pam` deb packages |
-| `make test` *(or `make verify`)* | Run automated 33-point integrity & security test suite on disk image |
+| `make test` *(or `make verify`)* | Run automated 34-point integrity & security test suite on disk image |
 | `make flash DISK=/dev/sdX` | Flash the latest built image to a target USB drive |
 | `make help` | Print help and list all targets and variables |
 
@@ -222,12 +222,12 @@ The test runner (`scripts/test-image-integrity.sh`) executes **34 automated vali
    - `debinit.sh` detects that it is running on the temporary factory kernel (3.2.x).
    - It runs `/usr/local/bin/zy-bb-env-and-kernel2-write`:
      - Detects the current NAND boot slot (`curr_bootfrom`).
-     - Flashes **Linux 6.12 (`uImage`)** to the alternate NAND partition (`kernel2` or `kernel1`).
+     - Flashes **Linux 6.18 (`uImage`)** to the alternate NAND partition (`kernel2` or `kernel1`).
      - Updates the Barebox bootloader environment to set `next_bootfrom`.
      - Writes a flash log to `/boot/kernel2_flash.log` on the USB drive.
    - The NAS will **beep the buzzer twice** and automatically **reboot**.
-4. **Second Boot (Native Linux 6.12):**
-   - Barebox directly boots Linux 6.12 from NAND and mounts the USB drive as root (`/`).
+4. **Second Boot (Native Linux 6.18):**
+   - Barebox directly boots Linux 6.18 from NAND and mounts the USB drive as root (`/`).
    - The system boots into native Debian 13 with full systemd, networking, and OpenMediaVault 8 services.
 
 ---
