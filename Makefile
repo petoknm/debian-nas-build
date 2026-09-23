@@ -279,7 +279,6 @@ ifeq ($(ENABLE_OMV),true)
 	sed -i 's/^" let g:skip_defaults_vim = 1/let g:skip_defaults_vim = 1/g' $(R)/etc/vim/vimrc 2>/dev/null || true
 	sed -i 's/NEED_IDMAPD=.*/NEED_IDMAPD=no/g' $(R)/etc/default/nfs-common 2>/dev/null || true
 	sed -i 's/RSYNC_ENABLE=.*/RSYNC_ENABLE=true/g' $(R)/etc/default/rsync 2>/dev/null || true
-	printf '#!/bin/sh\nexit 0\n' > $(R)/sbin/hotplug && chmod +x $(R)/sbin/hotplug
 	chroot $(R) systemctl enable ssh 2>/dev/null || true
 	chroot $(R) systemctl disable wsdd2 smbd nmbd winbind ksmbd nfs-server quota quotaon systemd-quotacheck openmediavault-beep-down openmediavault-beep-up 2>/dev/null || true
 	umount -l $(R)/dev/pts $(R)/sys $(R)/proc 2>/dev/null || true
